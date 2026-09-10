@@ -90,18 +90,36 @@ const RequestBlock = memo(function RequestBlock({ req }: { req: RequestData }) {
 
 // ── 思考过程折叠块 ──────────────────────────────────────────────
 
-const Thinking = memo(function Thinking({ content }: { content: string }) {
-  if (!content.trim()) return null;
+const Thinking = memo(function Thinking({ content, loading }: { content: string; loading?: boolean }) {
+  const showLoading = !!loading && !content.trim();
+  if (!content.trim() && !showLoading) return null;
   return (
-    <details className="group my-2 overflow-hidden rounded-lg border bg-muted/40">
+    <details
+      className="group my-2 overflow-hidden rounded-lg border bg-muted/40"
+      open={showLoading}
+    >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
         <BrainIcon className="size-3.5 shrink-0" />
         <span>思考过程</span>
+        {showLoading && (
+          <span className="flex gap-0.5">
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground" />
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+          </span>
+        )}
         <ChevronDownIcon className="ml-auto size-3.5 shrink-0 transition-transform duration-200 group-open:rotate-180" />
       </summary>
-      <div className="whitespace-pre-wrap border-t px-3 py-2 text-xs text-muted-foreground">
-        {content}
-      </div>
+      {showLoading ? (
+        <div className="flex items-center gap-1.5 border-t px-3 py-2.5 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" />
+          <span>正在思考中...</span>
+        </div>
+      ) : (
+        <div className="whitespace-pre-wrap border-t px-3 py-2 text-xs text-muted-foreground">
+          {content}
+        </div>
+      )}
     </details>
   );
 });
@@ -264,6 +282,7 @@ const AssistantMessage = memo(function AssistantMessage({ req }: { req: RequestD
   }
 
   // Streaming — plain text only, no markdown parsing
+  const waiting = !req.text && !req.thinking && req.toolCalls.length === 0;
   return (
     <div className="flex gap-2">
       <Avatar type="assistant" />
@@ -273,14 +292,15 @@ const AssistantMessage = memo(function AssistantMessage({ req }: { req: RequestD
           <span className="text-[0.6rem] opacity-50">{req.model}</span>
         </span>
         <div className="flex flex-col gap-2">
-          <Thinking content={req.thinking} />
+          <Thinking content={req.thinking} loading={waiting} />
           <ToolCallBlock calls={req.toolCalls} />
           {req.text ? (
             <div className="rounded-2xl bg-muted px-4 py-2.5 text-sm">
               <span className="whitespace-pre-wrap">{req.text}</span>
             </div>
           ) : (
-            !req.thinking && req.toolCalls.length === 0 && (
+            !waiting &&
+            req.toolCalls.length === 0 && (
               <div className="rounded-2xl bg-muted px-4 py-2.5 text-sm">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Loader2Icon className="size-3.5 animate-spin" />

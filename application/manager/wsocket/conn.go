@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -21,9 +22,17 @@ func NewRPC(stm *jsonrpc2.Conn) *RPC {
 
 func (wc *RPC) ChatCompletionNew(rc *aiflow.RequestContext, params openai.ChatCompletionNewParams) (openai.ChatCompletionNewParams, error) {
 	const method = methodPrefix + "chat-completion-new"
-	_ = wc.notify(rc, method, params)
 
-	return params, nil
+	var result openai.ChatCompletionNewParams
+	err := wc.call(rc, method, params, &result)
+	if err == nil {
+		return result, nil
+	}
+	if wc.isSkippError(err) {
+		return params, nil
+	}
+
+	return result, err
 }
 
 func (wc *RPC) ChatCompletionChunk(rc *aiflow.RequestContext, chunk openai.ChatCompletionChunk) {
@@ -44,11 +53,15 @@ func (wc *RPC) ChatCompletionDone(rc *aiflow.RequestContext) {
 func (wc *RPC) ChatCompletionError(rc *aiflow.RequestContext, err error) {
 	const method = methodPrefix + "chat-completion-error"
 
-	var params ErrorMessage
-	if apierr, ok := errors.AsType[*openai.Error](err); ok {
-		params.Code = apierr.Code
-		params.Message = apierr.Message
-	} else {
+	params := new(jsonrpc2.Error)
+	switch et := err.(type) {
+	case *jsonrpc2.Error:
+		params = et
+	case *openai.Error:
+		params.Code = int64(et.StatusCode)
+		params.Message = et.Error()
+		params.Data = new(json.RawMessage(et.RawJSON()))
+	default:
 		params.Message = err.Error()
 	}
 
@@ -65,10 +78,24 @@ func (wc *RPC) notify(rc *aiflow.RequestContext, method string, params any) erro
 	return wc.stm.Notify(ctx, method, params, jsonrpc2.Meta(meta))
 }
 
+func (wc *RPC) call(rc *aiflow.RequestContext, method string, params, result any) error {
+	meta := wc.extractMetadata(rc)
+	parent := rc.Request.Context()
+
+	timeout := 10 * time.Second
+	meta.TimeoutSeconds = int(timeout.Seconds())
+
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	return wc.stm.Call(ctx, method, params, result, jsonrpc2.Meta(meta))
+}
+
 func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
 	headers := []string{
 		"X-Session-Id",     // opencode
 		"Agent-Session-Id", // goose
+		"session-id",       // codex
 	}
 	var sessionID string
 	for _, key := range headers {
@@ -83,4 +110,18 @@ func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
 		RequestID: rc.RequestID,
 		UserAgent: rc.Request.UserAgent(),
 	}
+}
+
+func (wc *RPC) isSkippError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, jsonrpc2.ErrClosed) {
+		return true
+	}
+	if neterr, ok := err.(net.Error); ok {
+		return neterr.Timeout()
+	}
+
+	return false
 }

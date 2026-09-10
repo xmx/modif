@@ -142,6 +142,24 @@ const components: Components = {
       {children}
     </a>
   ),
+  // 表格：语义化容器 + 横向滚动包裹
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto rounded-lg border-2 border-muted-foreground/40">
+      <table className="w-full border-collapse text-left text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
+  th: ({ children }) => (
+    <th className="border-b-2 border-r border-muted-foreground/40 px-3 py-2 text-left text-xs font-semibold text-foreground last:border-r-0">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border-b border-r border-muted-foreground/40 px-3 py-2 text-xs text-foreground/90 last:border-r-0">
+      {children}
+    </td>
+  ),
+  tr: ({ children }) => <tr className="transition-colors hover:bg-accent/60">{children}</tr>,
 };
 
 // ── 主渲染器（memoized — 仅 content 变化时重新解析） ────────────
@@ -193,8 +211,14 @@ const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string
 const MarkdownBody = memo(function MarkdownBody({ content }: { content: string }) {
   if (!content.trim()) return null;
   return (
-    <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
-      {content}
-    </Markdown>
+    <div className="prose prose-neutral max-w-none prose-sm dark:prose-invert">
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={components}
+      >
+        {content}
+      </Markdown>
+    </div>
   );
 });

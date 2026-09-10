@@ -47,6 +47,8 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	}
 
 	e := echo.New()
+	e.HTTPErrorHandler = echox.HandleError
+
 	eg := echox.NewGroup(e)
 	routes.RegisterRoute(eg)
 

@@ -4,9 +4,27 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 interface JsonRpcMessage {
   jsonrpc: "2.0";
+  id?: string | number | null;
   method?: string;
   params?: unknown;
-  meta?: { session_id: string; request_id: string; user_agent: string };
+  meta?: { session_id: string; request_id: string; user_agent: string; timeout_seconds?: number };
+}
+
+export interface AuditItem {
+  id: string | number;
+  requestId: string;
+  sessionId: string;
+  userAgent: string;
+  model: string;
+  userMessage: string | null;
+  paramsRaw: string;
+  /** 后端在 meta.timeout_seconds 标识的超时时间（秒），超时后自动改写通过 */
+  timeoutSeconds: number | null;
+}
+
+export interface AuditBlock {
+  code: number;
+  message: string;
 }
 
 export interface ToolCallData {
@@ -161,6 +179,8 @@ export function useStore() {
   const [connected, setConnected] = useState(false);
   const [manualOff, setManualOff] = useState(false);
   const reconnectTrigger = useRef(0);
+  const [auditQueue, setAuditQueue] = useState<AuditItem[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Pending chunk deltas batched per RAF frame
   const pendingChunks = useRef<Map<string, { delta: string; thinking: string; toolCalls: ToolCallData[]; usage: RequestData["usage"] }>>(new Map());
@@ -194,6 +214,27 @@ export function useStore() {
         }
         const req: RequestData = { requestId: rid, userMessage, model: params?.model || "unknown", usage: null, error: null, done: false, timestamp: Date.now(), text: "", thinking: "", toolCalls: [] };
         dispatch({ type: "new", sid, userAgent: meta.user_agent || "Unknown", req });
+
+        // 带 id 的消息 → 是「请求」而非「通知」→ 需要审计
+        if (msg.id !== undefined && msg.id !== null) {
+          const timeoutSeconds =
+            typeof meta.timeout_seconds === "number" && meta.timeout_seconds > 0
+              ? meta.timeout_seconds
+              : null;
+          setAuditQueue((q) => [
+            ...q,
+            {
+              id: msg.id as string | number,
+              requestId: rid,
+              sessionId: sid,
+              userAgent: meta.user_agent || "Unknown",
+              model: req.model,
+              userMessage,
+              paramsRaw: JSON.stringify(params ?? {}, null, 2),
+              timeoutSeconds,
+            },
+          ]);
+        }
         break;
       }
 
@@ -286,6 +327,7 @@ export function useStore() {
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${protocol}//${location.host}/api/inspect/attach`);
+      wsRef.current = ws;
       ws.onopen = () => { if (!stopped) setConnected(true); };
       ws.onmessage = (e) => { if (!stopped) { try { handleMessage(JSON.parse(e.data)); } catch { /* */ } } };
       ws.onclose = (ev) => { if (!stopped) { setConnected(false); ws = null; if (!manualOff && ev.code !== 1000) reconnectTimer = setTimeout(connect, 3000); } };
@@ -298,11 +340,52 @@ export function useStore() {
 
   const selectSession = useCallback((id: string) => { setSelectedSessionId(id); }, []);
 
+  // 改写：通过则把改写后的 params 作为 JSON-RPC result 返回（原样或修改后的内容）
+  const resolveAudit = useCallback((id: string | number, params: unknown) => {
+    setAuditQueue((q) => q.filter((item) => item.id !== id));
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        result: params,
+      })
+    );
+  }, []);
+
+  // 内容审查：返回错误码 + 错误消息，相当于阻断该请求。
+  // 同时本地立即把该请求标记为 error/done，避免对话框一直停在「等待响应...」
+  const blockAudit = useCallback((item: AuditItem, block: AuditBlock) => {
+    setAuditQueue((q) => q.filter((x) => x.id !== item.id));
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: item.id,
+          error: {
+            code: block.code,
+            message: block.message,
+          },
+        })
+      );
+    }
+    dispatch({
+      type: "error",
+      rid: item.requestId,
+      error: { code: String(block.code), message: block.message },
+    });
+  }, []);
+
+  // 交互式请求超时后仅关闭审批窗口（后端自行兜底，前端无需提交）
+  const dismissAudit = useCallback((id: AuditItem["id"]) => {
+    setAuditQueue((q) => q.filter((x) => x.id !== id));
+  }, []);
+
   const toggleConnection = useCallback(() => {
     setManualOff((prev) => { if (!prev) reconnectTrigger.current++; return !prev; });
   }, []);
-
-  // Auto-select first session
   useEffect(() => {
     if (!selectedSessionId && state.sessions.length > 0) setSelectedSessionId(state.sessions[0].sessionId);
   }, [state.sessions, selectedSessionId]);
@@ -313,5 +396,9 @@ export function useStore() {
     connected,
     selectSession,
     toggleConnection,
+    auditQueue,
+    resolveAudit,
+    blockAudit,
+    dismissAudit,
   };
 }
