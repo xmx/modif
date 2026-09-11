@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -11,16 +12,19 @@ import (
 	"github.com/xmx/modif/application/aigate/aiflow"
 	"github.com/xmx/modif/application/echox"
 	"github.com/xmx/modif/application/manager/wsocket"
+	"github.com/xmx/modif/library/jsonrpc"
 )
 
 type Inspect struct {
 	hub aiflow.Huber
+	log *slog.Logger
 	upg *websocket.Upgrader
 }
 
-func NewInspect(hub aiflow.Huber) *Inspect {
+func NewInspect(hub aiflow.Huber, log *slog.Logger) *Inspect {
 	return &Inspect{
 		hub: hub,
+		log: log,
 		upg: &websocket.Upgrader{
 			HandshakeTimeout:  5 * time.Second,
 			ReadBufferSize:    4096,
@@ -43,7 +47,8 @@ func (ist *Inspect) attach(c *echo.Context) error {
 	}
 
 	ctx := r.Context()
-	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil)
+	log := jsonrpc.NewLogger(ist.log)
+	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, jsonrpc2.SetLogger(log))
 	defer conn.Close()
 
 	consume := wsocket.NewRPC(conn)

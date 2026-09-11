@@ -33,7 +33,7 @@ func Run(ctx context.Context, cfg string) error {
 
 //goland:noinspection GoUnhandledErrorResult
 func Exec(ctx context.Context, cfg *config.Config) error {
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	cli := openai.NewClient(
 		option.WithBaseURL(cfg.OpenAI.BaseURL),
 		option.WithAPIKey(cfg.OpenAI.APIKey),
@@ -45,7 +45,7 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	routes := echox.RouteRegisters{
 		aiapi.NewChatCompletion(chatCompletionProc),
 		aiapi.NewResponse(responseProc),
-		manaapi.NewInspect(hub),
+		manaapi.NewInspect(hub, log),
 	}
 
 	e := echo.New()

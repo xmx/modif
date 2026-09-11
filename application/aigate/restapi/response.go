@@ -28,7 +28,9 @@ func (rsp *Response) responses(c *echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
-	rc := aiflow.NewRequestContext(w, r)
+
+	clientIP := c.RealIP()
+	rc := aiflow.NewRequestContext(w, r, clientIP)
 
 	return rsp.proc.Responses(rc, params)
 }

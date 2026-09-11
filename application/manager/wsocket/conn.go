@@ -29,7 +29,7 @@ func (wc *RPC) ChatCompletionNew(rc *aiflow.RequestContext, params openai.ChatCo
 	if err == nil {
 		return result, nil
 	}
-	if wc.isSkippError(err) {
+	if wc.isSkipError(err) {
 		return params, nil
 	}
 
@@ -59,7 +59,7 @@ func (wc *RPC) ResponseNew(rc *aiflow.RequestContext, params responses.ResponseN
 	if err == nil {
 		return result, nil
 	}
-	if wc.isSkippError(err) {
+	if wc.isSkipError(err) {
 		return params, nil
 	}
 
@@ -121,10 +121,13 @@ func (wc *RPC) call(rc *aiflow.RequestContext, method string, params, result any
 }
 
 func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
+	// 已知不会带 Session ID 的 Agent：
+	// cline
 	headers := []string{
-		"X-Session-Id",       // opencode
-		"X-Session-Affinity", // opencode
+		"X-Session-Id",       // opencode/kilo
+		"X-Session-Affinity", // opencode/kilo
 		"Agent-Session-Id",   // goose
+		"X-Conversation-Id",  // Tencent Cloud CodeBuddy
 		"session-id",         // codex
 	}
 	var sessionID string
@@ -136,13 +139,14 @@ func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
 	}
 
 	return &Metadata{
+		ClientIP:  rc.ClientIP,
 		SessionID: sessionID,
 		RequestID: rc.RequestID,
 		UserAgent: rc.Request.UserAgent(),
 	}
 }
 
-func (wc *RPC) isSkippError(err error) bool {
+func (wc *RPC) isSkipError(err error) bool {
 	if err == nil {
 		return true
 	}

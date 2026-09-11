@@ -27,13 +27,14 @@ func (cc *ChatCompletion) RegisterRoute(g echox.Group) {
 
 //goland:noinspection GoUnhandledErrorResult
 func (cc *ChatCompletion) completions(c *echo.Context) error {
+	w, r := c.Response(), c.Request()
 	var params openai.ChatCompletionNewParams
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
 
-	w, r := c.Response(), c.Request()
-	rc := aiflow.NewRequestContext(w, r)
+	clientIP := c.RealIP()
+	rc := aiflow.NewRequestContext(w, r, clientIP)
 
 	return cc.proc.Completions(rc, params)
 }
