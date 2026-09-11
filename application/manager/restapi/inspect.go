@@ -48,7 +48,11 @@ func (ist *Inspect) attach(c *echo.Context) error {
 
 	consume := wsocket.NewRPC(conn)
 	ist.hub.AddChatCompletion(consume)
-	defer ist.hub.DelChatCompletion(consume)
+	ist.hub.AddResponse(consume)
+	defer func() {
+		ist.hub.DelChatCompletion(consume)
+		ist.hub.DelResponse(consume)
+	}()
 
 	<-conn.DisconnectNotify()
 

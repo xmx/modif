@@ -1,6 +1,8 @@
 package restapi
 
 import (
+	"net/http"
+
 	"github.com/labstack/echo/v5"
 	"github.com/openai/openai-go/v3"
 	"github.com/xmx/modif/application/aigate/aiflow"
@@ -20,6 +22,7 @@ func NewChatCompletion(proc *process.ChatCompletion) *ChatCompletion {
 
 func (cc *ChatCompletion) RegisterRoute(g echox.Group) {
 	g.V1.POST("/chat/completions", cc.completions)
+	g.V1.GET("/models", cc.models)
 }
 
 //goland:noinspection GoUnhandledErrorResult
@@ -33,4 +36,11 @@ func (cc *ChatCompletion) completions(c *echo.Context) error {
 	rc := aiflow.NewRequestContext(w, r)
 
 	return cc.proc.Completions(rc, params)
+}
+
+func (cc *ChatCompletion) models(c *echo.Context) error {
+	ctx := c.Request().Context()
+	ret, _ := cc.proc.Models(ctx)
+
+	return c.JSON(http.StatusOK, ret)
 }

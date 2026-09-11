@@ -5,8 +5,8 @@ go 1.27
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/labstack/echo/v5 v5.3.1
-	github.com/openai/openai-go/v3 v3.58.0
-	github.com/sourcegraph/jsonrpc2 v0.2.2
+	github.com/openai/openai-go/v3 v3.61.0
+	github.com/sourcegraph/jsonrpc2 v0.2.3
 )
 
 require (

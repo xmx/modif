@@ -10,10 +10,10 @@ import {
 import { cn } from "@/lib/utils";
 
 const BLOCK_REASONS = [
-  { label: "涉政" },
-  { label: "色情" },
-  { label: "隐私泄露" },
-  { label: "其他" },
+  { label: "涉政", message: "内容涉及敏感政治话题" },
+  { label: "色情", message: "内容涉及色情或低俗信息" },
+  { label: "隐私泄露", message: "内容可能泄露个人隐私" },
+  { label: "其他", message: "内容不符合审查要求" },
 ];
 
 /** 阻断统一返回 HTTP 403 */
@@ -89,18 +89,49 @@ function useCountdown(seconds: number | null, onExpire: () => void) {
   return remaining;
 }
 
-// 把修改后的最新用户消息写回 params 中最后一条 role=user 消息的 content
+// 把修改后的最新用户消息写回 params：
+// - chat completions: messages 中最后一条 role=user 的 content
+// - responses: input 字符串，或 input 数组中最后一条 role=user 的 content/input_text
 function applyUserEdit(params: unknown, newContent: string): unknown {
   if (typeof params !== "object" || params === null) return params;
-  const p = params as { messages?: Array<{ role?: string; content?: unknown }> };
-  if (!Array.isArray(p.messages)) return params;
-  for (let k = p.messages.length - 1; k >= 0; k--) {
-    const m = p.messages[k];
-    if (m && m.role === "user") {
-      m.content = newContent;
-      break;
+  const p = params as {
+    messages?: Array<{ role?: string; content?: unknown }>;
+    input?: unknown;
+  };
+
+  if (Array.isArray(p.messages)) {
+    for (let k = p.messages.length - 1; k >= 0; k--) {
+      const m = p.messages[k];
+      if (m && m.role === "user") {
+        m.content = newContent;
+        return p;
+      }
     }
   }
+
+  if (typeof p.input === "string") {
+    p.input = newContent;
+    return p;
+  }
+
+  if (Array.isArray(p.input)) {
+    for (let k = p.input.length - 1; k >= 0; k--) {
+      const item = p.input[k] as { role?: string; content?: unknown } | null;
+      if (!item || item.role !== "user") continue;
+      if (typeof item.content === "string") {
+        item.content = newContent;
+      } else if (Array.isArray(item.content)) {
+        const parts = item.content as Array<{ type?: string; text?: unknown }>;
+        const textPart = parts.find((part) => part.type === "input_text" || typeof part.text === "string");
+        if (textPart) textPart.text = newContent;
+        else item.content = newContent;
+      } else {
+        item.content = newContent;
+      }
+      return p;
+    }
+  }
+
   return p;
 }
 
@@ -130,9 +161,9 @@ function AuditItemCard({ item, onResolve, onBlock, onDismiss }: AuditItemCardPro
     onResolve(item.id, params);
   };
 
-  // 内容审查：直接按预置快捷原因返回 403 阻断该请求
+  // 内容审查：按钮保持短标签，发送给后端的 error message 使用更明确的阻断理由
   const blockWith = (r: (typeof BLOCK_REASONS)[number]) => {
-    onBlock(item, { code: BLOCK_CODE, message: r.label });
+    onBlock(item, { code: BLOCK_CODE, message: r.message });
   };
 
   // 倒计时读秒，归零时自动关闭审批窗口

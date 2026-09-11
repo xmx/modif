@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/xmx/modif/application/aigate/aiflow"
 )
@@ -40,11 +41,6 @@ func (wc *RPC) ChatCompletionChunk(rc *aiflow.RequestContext, chunk openai.ChatC
 	_ = wc.notify(rc, method, json.RawMessage(chunk.RawJSON()))
 }
 
-func (wc *RPC) ChatCompletionUsage(rc *aiflow.RequestContext, usage openai.CompletionUsage) {
-	const method = methodPrefix + "chat-completion-usage"
-	_ = wc.notify(rc, method, json.RawMessage(usage.RawJSON()))
-}
-
 func (wc *RPC) ChatCompletionDone(rc *aiflow.RequestContext) {
 	const method = methodPrefix + "chat-completion-done"
 	_ = wc.notify(rc, method, nil)
@@ -52,7 +48,40 @@ func (wc *RPC) ChatCompletionDone(rc *aiflow.RequestContext) {
 
 func (wc *RPC) ChatCompletionError(rc *aiflow.RequestContext, err error) {
 	const method = methodPrefix + "chat-completion-error"
+	wc.notifyError(rc, err, method)
+}
 
+func (wc *RPC) ResponseNew(rc *aiflow.RequestContext, params responses.ResponseNewParams) (responses.ResponseNewParams, error) {
+	const method = methodPrefix + "response-new"
+
+	var result responses.ResponseNewParams
+	err := wc.call(rc, method, params, &result)
+	if err == nil {
+		return result, nil
+	}
+	if wc.isSkippError(err) {
+		return params, nil
+	}
+
+	return result, err
+}
+
+func (wc *RPC) ResponseChunk(rc *aiflow.RequestContext, chunk responses.ResponseStreamEventUnion) {
+	const method = methodPrefix + "response-chunk"
+	_ = wc.notify(rc, method, json.RawMessage(chunk.RawJSON()))
+}
+
+func (wc *RPC) ResponseDone(rc *aiflow.RequestContext) {
+	const method = methodPrefix + "response-done"
+	_ = wc.notify(rc, method, nil)
+}
+
+func (wc *RPC) ResponseError(rc *aiflow.RequestContext, err error) {
+	const method = methodPrefix + "response-error"
+	wc.notifyError(rc, err, method)
+}
+
+func (wc *RPC) notifyError(rc *aiflow.RequestContext, err error, method string) {
 	params := new(jsonrpc2.Error)
 	switch et := err.(type) {
 	case *jsonrpc2.Error:
@@ -93,9 +122,10 @@ func (wc *RPC) call(rc *aiflow.RequestContext, method string, params, result any
 
 func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
 	headers := []string{
-		"X-Session-Id",     // opencode
-		"Agent-Session-Id", // goose
-		"session-id",       // codex
+		"X-Session-Id",       // opencode
+		"X-Session-Affinity", // opencode
+		"Agent-Session-Id",   // goose
+		"session-id",         // codex
 	}
 	var sessionID string
 	for _, key := range headers {

@@ -18,6 +18,9 @@ export default defineConfig({
     cssMinify: true,
   },
   server: {
+    host: '0.0.0.0',
+    port: 8867,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8866',

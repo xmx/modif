@@ -32,39 +32,61 @@ func (w *SSEWriter) JSON(v any) error {
 		return err
 	}
 
-	return w.write(tmp)
+	return w.writeData(tmp)
 }
 
 func (w *SSEWriter) Text(v string) error {
-	return w.write(strings.NewReader(v))
+	return w.writeData(strings.NewReader(v))
 }
 
 func (w *SSEWriter) Done() error {
-	return w.write(strings.NewReader("[DONE]"))
+	return w.writeData(strings.NewReader("[DONE]"))
 }
 
-func (w *SSEWriter) write(r io.Reader) error {
+func (w *SSEWriter) Event(evt string) error {
+	if _, err := io.WriteString(w.w, "event: "+evt+"\n"); err != nil {
+		return err
+	}
+	w.f.Flush()
+
+	return nil
+}
+
+func (w *SSEWriter) writeData(r io.Reader) error {
 	defer w.f.Flush()
 
+	var wrote bool
 	br := bufio.NewReader(r)
+	tmp := bytes.NewBufferString("data:")
+
 	for {
-		line, _, err := br.ReadLine()
+		line, pre, err := br.ReadLine()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				break
 			}
-
 			return err
 		}
 
-		if _, err = io.WriteString(w.w, "data: "); err == nil {
-			if _, err = w.w.Write(line); err == nil {
-				_, err = w.w.Write([]byte{'\n', '\n'})
-			}
+		tmp.Write(line)
+		if pre {
+			continue
 		}
 
-		if err != nil {
+		tmp.WriteByte('\n')
+		if _, err = tmp.WriteTo(w.w); err != nil {
 			return err
 		}
+
+		tmp.Reset()
+		tmp.WriteString("data: ")
+		wrote = true
 	}
+
+	if wrote {
+		_, err := w.w.Write([]byte("\n"))
+		return err
+	}
+
+	return nil
 }

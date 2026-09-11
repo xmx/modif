@@ -41,8 +41,10 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	hub := aiflow.NewHub()
 
 	chatCompletionProc := process.NewChatCompletion(cli, hub, log)
+	responseProc := process.NewResponse(cli, hub, log)
 	routes := echox.RouteRegisters{
 		aiapi.NewChatCompletion(chatCompletionProc),
+		aiapi.NewResponse(responseProc),
 		manaapi.NewInspect(hub),
 	}
 

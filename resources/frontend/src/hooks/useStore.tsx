@@ -18,7 +18,7 @@ export interface AuditItem {
   model: string;
   userMessage: string | null;
   paramsRaw: string;
-  /** 后端在 meta.timeout_seconds 标识的超时时间（秒），超时后自动改写通过 */
+  /** 后端在 meta.timeout_seconds 标识的超时时间（秒），超时后自动关闭审批窗口 */
   timeoutSeconds: number | null;
 }
 
@@ -31,13 +31,6 @@ export interface ToolCallData {
   id: string;
   name: string;
   arguments: string;
-}
-
-interface ToolCallDelta {
-  index?: number;
-  id?: string;
-  type?: string;
-  function?: { name?: string; arguments?: string };
 }
 
 export interface RequestData {
@@ -61,6 +54,13 @@ export interface SessionData {
   lastActivity: number;
 }
 
+type ChunkUpdate = {
+  delta: string;
+  thinking: string;
+  toolCalls: ToolCallData[];
+  usage: RequestData["usage"];
+};
+
 // ── Reducer state ───────────────────────────────────────────────
 
 interface State {
@@ -73,6 +73,22 @@ type Action =
   | { type: "usage"; rid: string; usage: RequestData["usage"] }
   | { type: "done"; rid: string }
   | { type: "error"; rid: string; error: RequestData["error"] };
+
+function mergeToolCalls(prev: ToolCallData[], deltas: ToolCallData[]): ToolCallData[] {
+  const next = prev.map((t) => ({ ...t, arguments: t.arguments }));
+  for (let i = 0; i < deltas.length; i++) {
+    const d = deltas[i];
+    if (!next[i]) {
+      next[i] = { ...d };
+    } else {
+      const cur = next[i];
+      if (d.id) cur.id = d.id;
+      if (d.name) cur.name += d.name;
+      if (d.arguments) cur.arguments += d.arguments;
+    }
+  }
+  return next;
+}
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -93,25 +109,7 @@ function reducer(state: State, action: Action): State {
       return { sessions };
     }
 
-    // 工具调用增量：不同 index 的 tool_calls 可能是同一次调用的分段，需要合并
-    function mergeToolCalls(prev: ToolCallData[], deltas: ToolCallDelta[]): ToolCallData[] {
-      const next = prev.map((t) => ({ ...t, arguments: t.arguments }));
-      for (const d of deltas) {
-        const idx = d.index ?? 0;
-        if (!next[idx]) {
-          next[idx] = { id: d.id ?? "", name: d.function?.name ?? "", arguments: d.function?.arguments ?? "" };
-        } else {
-          const cur = next[idx];
-          if (d.id) cur.id = d.id;
-          if (d.function?.name) cur.name += d.function.name;
-          if (d.function?.arguments) cur.arguments += d.function.arguments;
-        }
-      }
-      return next;
-    }
-
     case "chunk": {
-      // Only update if the request exists and text is unchanged reference-wise by copying
       let changed = false;
       const sessions = state.sessions.map((s) => {
         const ri = s.requests.findIndex((r) => r.requestId === action.rid);
@@ -126,7 +124,7 @@ function reducer(state: State, action: Action): State {
           usage: action.usage ?? req.usage,
         };
         changed = true;
-        return { ...s, requests };
+        return { ...s, requests, lastActivity: Date.now() };
       });
       return changed ? { sessions } : state;
     }
@@ -137,7 +135,7 @@ function reducer(state: State, action: Action): State {
         if (ri === -1) return s;
         const requests = s.requests.slice();
         requests[ri] = { ...s.requests[ri], done: true };
-        return { ...s, requests };
+        return { ...s, requests, lastActivity: Date.now() };
       });
       return { sessions };
     }
@@ -150,7 +148,7 @@ function reducer(state: State, action: Action): State {
         const requests = s.requests.slice();
         requests[ri] = { ...s.requests[ri], usage: action.usage };
         changed = true;
-        return { ...s, requests };
+        return { ...s, requests, lastActivity: Date.now() };
       });
       return changed ? { sessions } : state;
     }
@@ -161,7 +159,7 @@ function reducer(state: State, action: Action): State {
         if (ri === -1) return s;
         const requests = s.requests.slice();
         requests[ri] = { ...s.requests[ri], done: true, error: action.error };
-        return { ...s, requests };
+        return { ...s, requests, lastActivity: Date.now() };
       });
       return { sessions };
     }
@@ -169,6 +167,127 @@ function reducer(state: State, action: Action): State {
     default:
       return state;
   }
+}
+
+function usageFrom(raw: unknown): RequestData["usage"] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  const prompt = v.prompt_tokens ?? v.input_tokens;
+  const completion = v.completion_tokens ?? v.output_tokens;
+  const total = v.total_tokens;
+  if (typeof prompt !== "number" && typeof completion !== "number" && typeof total !== "number") return null;
+  return {
+    prompt_tokens: typeof prompt === "number" ? prompt : 0,
+    completion_tokens: typeof completion === "number" ? completion : 0,
+    total_tokens: typeof total === "number" ? total : (typeof prompt === "number" ? prompt : 0) + (typeof completion === "number" ? completion : 0),
+  };
+}
+
+function textFromContent(content: unknown): string | null {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const texts: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const p = part as Record<string, unknown>;
+    if (typeof p.text === "string") texts.push(p.text);
+    else if (typeof p.content === "string") texts.push(p.content);
+  }
+  return texts.length > 0 ? texts.join("\n") : null;
+}
+
+function latestChatUserMessage(params: { messages?: Array<{ role?: string; content?: unknown }> } | null): string | null {
+  if (!params?.messages) return null;
+  for (let k = params.messages.length - 1; k >= 0; k--) {
+    const m = params.messages[k];
+    if (m.role === "user") return textFromContent(m.content);
+  }
+  return null;
+}
+
+function latestResponseInput(params: Record<string, unknown> | null): string | null {
+  const input = params?.input;
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) return null;
+  for (let k = input.length - 1; k >= 0; k--) {
+    const item = input[k];
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (v.role === "user") return textFromContent(v.content) ?? textFromContent(v.input);
+  }
+  return null;
+}
+
+function responseTextDelta(event: Record<string, unknown>): string {
+  for (const key of ["delta", "text", "output_text_delta"]) {
+    const v = event[key];
+    if (typeof v === "string") return v;
+  }
+  return "";
+}
+
+function responseThinkingDelta(event: Record<string, unknown>): string {
+  const delta = event.delta;
+  if (typeof delta === "string" && typeof event.type === "string" && event.type.includes("reasoning")) return delta;
+  for (const key of ["summary_text_delta", "reasoning_delta"] ) {
+    const v = event[key];
+    if (typeof v === "string") return v;
+  }
+  return "";
+}
+
+function responseToolCall(event: Record<string, unknown>): ToolCallData[] {
+  const item = event.item;
+  if (!item || typeof item !== "object") return [];
+  const v = item as Record<string, unknown>;
+  const type = String(v.type ?? "");
+  if (!type.includes("function") && !type.includes("tool")) return [];
+  const fn = (v.function ?? {}) as Record<string, unknown>;
+  return [{
+    id: typeof v.id === "string" ? v.id : typeof v.call_id === "string" ? v.call_id : "",
+    name: typeof v.name === "string" ? v.name : typeof fn.name === "string" ? fn.name : type,
+    arguments: typeof v.arguments === "string" ? v.arguments : typeof fn.arguments === "string" ? fn.arguments : "",
+  }];
+}
+
+function chatChunkUpdate(chunk: Record<string, unknown>): ChunkUpdate {
+  let delta = "";
+  let thinking = "";
+  let toolCalls: ToolCallData[] = [];
+  const choices = chunk.choices;
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      const d = (choice as Record<string, unknown>).delta as Record<string, unknown> | undefined;
+      if (!d) continue;
+      if (typeof d.content === "string") delta += d.content;
+      const rc = d.reasoning_content;
+      if (typeof rc === "string") thinking += rc;
+      const tcs = d.tool_calls;
+      if (Array.isArray(tcs)) {
+        toolCalls = toolCalls.concat(
+          tcs.map((tc) => {
+            const t = tc as Record<string, unknown>;
+            const fn = (t.function ?? {}) as { name?: unknown; arguments?: unknown };
+            return {
+              id: typeof t.id === "string" ? t.id : "",
+              name: typeof fn.name === "string" ? fn.name : "",
+              arguments: typeof fn.arguments === "string" ? fn.arguments : "",
+            } satisfies ToolCallData;
+          })
+        );
+      }
+    }
+  }
+  return { delta, thinking, toolCalls, usage: usageFrom(chunk.usage) };
+}
+
+function responseChunkUpdate(event: Record<string, unknown>): ChunkUpdate {
+  return {
+    delta: responseTextDelta(event),
+    thinking: responseThinkingDelta(event),
+    toolCalls: responseToolCall(event),
+    usage: usageFrom(event.usage) ?? usageFrom((event.response as Record<string, unknown> | undefined)?.usage),
+  };
 }
 
 // ── Throttled dispatch (RAF batch) ──────────────────────────────
@@ -182,8 +301,7 @@ export function useStore() {
   const [auditQueue, setAuditQueue] = useState<AuditItem[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // Pending chunk deltas batched per RAF frame
-  const pendingChunks = useRef<Map<string, { delta: string; thinking: string; toolCalls: ToolCallData[]; usage: RequestData["usage"] }>>(new Map());
+  const pendingChunks = useRef<Map<string, ChunkUpdate>>(new Map());
   const rafPending = useRef(false);
 
   const flushChunks = useCallback(() => {
@@ -197,125 +315,107 @@ export function useStore() {
     }
   }, []);
 
+  const enqueueChunk = useCallback((rid: string, update: ChunkUpdate) => {
+    if (!update.delta && !update.thinking && update.toolCalls.length === 0 && !update.usage) return;
+    const existing = pendingChunks.current.get(rid);
+    if (existing) {
+      existing.delta += update.delta;
+      existing.thinking += update.thinking;
+      if (update.toolCalls.length > 0) existing.toolCalls = existing.toolCalls.concat(update.toolCalls);
+      if (update.usage) existing.usage = update.usage;
+    } else {
+      pendingChunks.current.set(rid, update);
+    }
+    if (!rafPending.current) {
+      rafPending.current = true;
+      requestAnimationFrame(flushChunks);
+    }
+  }, [flushChunks]);
+
+  const addAudit = useCallback((msg: JsonRpcMessage, rid: string, sid: string, userAgent: string, model: string, userMessage: string | null, params: unknown) => {
+    if (msg.id === undefined || msg.id === null) return;
+    const timeoutSeconds =
+      typeof msg.meta?.timeout_seconds === "number" && msg.meta.timeout_seconds > 0
+        ? msg.meta.timeout_seconds
+        : null;
+    setAuditQueue((q) => [
+      ...q,
+      {
+        id: msg.id as string | number,
+        requestId: rid,
+        sessionId: sid,
+        userAgent,
+        model,
+        userMessage,
+        paramsRaw: JSON.stringify(params ?? {}, null, 2),
+        timeoutSeconds,
+      },
+    ]);
+  }, []);
+
   const handleMessage = useCallback((msg: JsonRpcMessage) => {
     const meta = msg.meta;
     if (!meta?.session_id || !meta?.request_id || !msg.method) return;
     const { session_id: sid, request_id: rid } = meta;
+    const userAgent = meta.user_agent || "Unknown";
 
     switch (msg.method) {
       case "modif/chat-completion-new": {
-        const params = msg.params as { messages?: Array<{ role: string; content: string }>; model?: string } | null;
-        let userMessage: string | null = null;
-        if (params?.messages) {
-          for (let k = params.messages.length - 1; k >= 0; k--) {
-            const m = params.messages[k];
-            if (m.role === "user" && typeof m.content === "string") { userMessage = m.content; break; }
-          }
-        }
+        const params = msg.params as { messages?: Array<{ role?: string; content?: unknown }>; model?: string } | null;
+        const userMessage = latestChatUserMessage(params);
         const req: RequestData = { requestId: rid, userMessage, model: params?.model || "unknown", usage: null, error: null, done: false, timestamp: Date.now(), text: "", thinking: "", toolCalls: [] };
-        dispatch({ type: "new", sid, userAgent: meta.user_agent || "Unknown", req });
+        dispatch({ type: "new", sid, userAgent, req });
+        addAudit(msg, rid, sid, userAgent, req.model, userMessage, params);
+        break;
+      }
 
-        // 带 id 的消息 → 是「请求」而非「通知」→ 需要审计
-        if (msg.id !== undefined && msg.id !== null) {
-          const timeoutSeconds =
-            typeof meta.timeout_seconds === "number" && meta.timeout_seconds > 0
-              ? meta.timeout_seconds
-              : null;
-          setAuditQueue((q) => [
-            ...q,
-            {
-              id: msg.id as string | number,
-              requestId: rid,
-              sessionId: sid,
-              userAgent: meta.user_agent || "Unknown",
-              model: req.model,
-              userMessage,
-              paramsRaw: JSON.stringify(params ?? {}, null, 2),
-              timeoutSeconds,
-            },
-          ]);
-        }
+      case "modif/response-new": {
+        const params = msg.params as Record<string, unknown> | null;
+        const userMessage = latestResponseInput(params);
+        const model = typeof params?.model === "string" ? params.model : "responses";
+        const req: RequestData = { requestId: rid, userMessage, model, usage: null, error: null, done: false, timestamp: Date.now(), text: "", thinking: "", toolCalls: [] };
+        dispatch({ type: "new", sid, userAgent, req });
+        addAudit(msg, rid, sid, userAgent, model, userMessage, params);
         break;
       }
 
       case "modif/chat-completion-chunk": {
         const chunk = msg.params as Record<string, unknown> | null;
-        if (!chunk?.choices || !Array.isArray(chunk.choices)) break;
-        let delta = "";
-        let thinking = "";
-        let toolCalls: ToolCallData[] = [];
-        for (const choice of chunk.choices) {
-          const d = (choice as Record<string, unknown>).delta as Record<string, unknown> | undefined;
-          if (!d) continue;
-          // 文本正文
-          if (typeof d.content === "string") delta += d.content;
-          // 思考内容（OpenAI o1/DeepSeek-R1 等）
-          const rc = d.reasoning_content;
-          if (typeof rc === "string") thinking += rc;
-          // 工具调用增量
-          const tcs = (d as Record<string, unknown>).tool_calls;
-          if (Array.isArray(tcs)) {
-            toolCalls = toolCalls.concat(
-              tcs.map((tc) => {
-                const t = tc as Record<string, unknown>;
-                const fn = (t.function ?? {}) as { name?: unknown; arguments?: unknown };
-                return {
-                  id: typeof t.id === "string" ? t.id : "",
-                  name: typeof fn.name === "string" ? fn.name : "",
-                  arguments: typeof fn.arguments === "string" ? fn.arguments : "",
-                } satisfies ToolCallData;
-              })
-            );
-          }
-        }
+        if (!chunk) break;
+        enqueueChunk(rid, chatChunkUpdate(chunk));
+        break;
+      }
 
-        // 该 chunk 是否携带 usage（通常最后一个 chunk）
-        const usage = chunk.usage as RequestData["usage"] | undefined;
-
-        if (!delta && !thinking && toolCalls.length === 0) {
-          if (usage) dispatch({ type: "chunk", rid, delta: "", thinking: "", toolCalls: [], usage });
-          break;
-        }
-
-        const existing = pendingChunks.current.get(rid);
-        if (existing) {
-          existing.delta += delta;
-          existing.thinking += thinking;
-          if (toolCalls.length > 0) existing.toolCalls = existing.toolCalls.concat(toolCalls);
-          if (usage) existing.usage = usage;
-        } else {
-          pendingChunks.current.set(rid, { delta, thinking, toolCalls, usage: usage ?? null });
-        }
-        if (!rafPending.current) {
-          rafPending.current = true;
-          requestAnimationFrame(flushChunks);
-        }
+      case "modif/response-chunk": {
+        const event = msg.params as Record<string, unknown> | null;
+        if (!event) break;
+        enqueueChunk(rid, responseChunkUpdate(event));
         break;
       }
 
       case "modif/chat-completion-usage": {
-        const usage = msg.params as RequestData["usage"] | null;
-        if (usage && typeof usage === "object") {
-          dispatch({ type: "usage", rid, usage });
-        }
+        const usage = usageFrom(msg.params);
+        if (usage) dispatch({ type: "usage", rid, usage });
         break;
       }
 
-      case "modif/chat-completion-done": {
+      case "modif/chat-completion-done":
+      case "modif/response-done": {
         flushChunks();
         dispatch({ type: "done", rid });
         break;
       }
 
-      case "modif/chat-completion-error": {
+      case "modif/chat-completion-error":
+      case "modif/response-error": {
         flushChunks();
-        dispatch({ type: "error", rid, error: msg.params as RequestData["error"] });
+        const err = msg.params as { code?: unknown; message?: unknown } | null;
+        dispatch({ type: "error", rid, error: { code: String(err?.code ?? ""), message: String(err?.message ?? "请求出错") } });
         break;
       }
     }
-  }, [flushChunks]);
+  }, [addAudit, enqueueChunk, flushChunks]);
 
-  // WebSocket
   useEffect(() => {
     if (manualOff) { setConnected(false); return; }
     let stopped = false;
@@ -340,45 +440,22 @@ export function useStore() {
 
   const selectSession = useCallback((id: string) => { setSelectedSessionId(id); }, []);
 
-  // 改写：通过则把改写后的 params 作为 JSON-RPC result 返回（原样或修改后的内容）
   const resolveAudit = useCallback((id: string | number, params: unknown) => {
     setAuditQueue((q) => q.filter((item) => item.id !== id));
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        result: params,
-      })
-    );
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id, result: params }));
   }, []);
 
-  // 内容审查：返回错误码 + 错误消息，相当于阻断该请求。
-  // 同时本地立即把该请求标记为 error/done，避免对话框一直停在「等待响应...」
   const blockAudit = useCallback((item: AuditItem, block: AuditBlock) => {
     setAuditQueue((q) => q.filter((x) => x.id !== item.id));
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: item.id,
-          error: {
-            code: block.code,
-            message: block.message,
-          },
-        })
-      );
+      ws.send(JSON.stringify({ jsonrpc: "2.0", id: item.id, error: { code: block.code, message: block.message } }));
     }
-    dispatch({
-      type: "error",
-      rid: item.requestId,
-      error: { code: String(block.code), message: block.message },
-    });
+    dispatch({ type: "error", rid: item.requestId, error: { code: String(block.code), message: block.message } });
   }, []);
 
-  // 交互式请求超时后仅关闭审批窗口（后端自行兜底，前端无需提交）
   const dismissAudit = useCallback((id: AuditItem["id"]) => {
     setAuditQueue((q) => q.filter((x) => x.id !== id));
   }, []);
@@ -386,6 +463,7 @@ export function useStore() {
   const toggleConnection = useCallback(() => {
     setManualOff((prev) => { if (!prev) reconnectTrigger.current++; return !prev; });
   }, []);
+
   useEffect(() => {
     if (!selectedSessionId && state.sessions.length > 0) setSelectedSessionId(state.sessions[0].sessionId);
   }, [state.sessions, selectedSessionId]);

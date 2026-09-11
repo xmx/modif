@@ -1,10 +1,12 @@
 package process
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/labstack/echo/v5"
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/pagination"
 	"github.com/xmx/modif/application/aigate/aiflow"
 	"github.com/xmx/modif/library/ssestream"
 )
@@ -23,9 +25,13 @@ func NewChatCompletion(cli openai.Client, hub aiflow.Huber, log *slog.Logger) *C
 	}
 }
 
+func (cc *ChatCompletion) Models(ctx context.Context) (*pagination.Page[openai.Model], error) {
+	return cc.cli.Models.List(ctx)
+}
+
 //goland:noinspection GoUnhandledErrorResult
 func (cc *ChatCompletion) Completions(rc *aiflow.RequestContext, params openai.ChatCompletionNewParams) error {
-	hook := cc.hub.ChatCompletion()
+	hook := cc.hub.RefChatCompletion()
 	msg, err := hook.ChatCompletionNew(rc, params)
 	if err != nil {
 		return err
@@ -70,7 +76,6 @@ func (cc *ChatCompletion) Completions(rc *aiflow.RequestContext, params openai.C
 	}
 	_ = sse.Done()
 
-	hook.ChatCompletionUsage(rc, chunk.Usage)
 	hook.ChatCompletionDone(rc)
 
 	return nil
