@@ -7,7 +7,7 @@ interface JsonRpcMessage {
   id?: string | number | null;
   method?: string;
   params?: unknown;
-  meta?: { session_id: string; request_id: string; user_agent: string; timeout_seconds?: number };
+  meta?: { session_id?: string; client_ip?: string; request_id: string; user_agent: string; timeout_seconds?: number };
 }
 
 export interface AuditItem {
@@ -48,6 +48,7 @@ export interface RequestData {
 
 export interface SessionData {
   sessionId: string;
+  clientIP: string;
   userAgent: string;
   requests: RequestData[];
   createdAt: number;
@@ -68,7 +69,7 @@ interface State {
 }
 
 type Action =
-  | { type: "new"; sid: string; userAgent: string; req: RequestData }
+  | { type: "new"; sid: string; clientIP: string; userAgent: string; req: RequestData }
   | { type: "chunk"; rid: string; delta: string; thinking: string; toolCalls: ToolCallData[]; usage: RequestData["usage"] }
   | { type: "usage"; rid: string; usage: RequestData["usage"] }
   | { type: "done"; rid: string }
@@ -99,11 +100,11 @@ function reducer(state: State, action: Action): State {
         const session = state.sessions[idx];
         if (session.requests.some((r) => r.requestId === action.req.requestId)) return state;
         sessions = state.sessions.slice();
-        sessions[idx] = { ...session, requests: [...session.requests, action.req], lastActivity: Date.now() };
+        sessions[idx] = { ...session, clientIP: action.clientIP || session.clientIP, requests: [...session.requests, action.req], lastActivity: Date.now() };
       } else {
         sessions = [
           ...state.sessions,
-          { sessionId: action.sid, userAgent: action.userAgent, requests: [action.req], createdAt: Date.now(), lastActivity: Date.now() },
+          { sessionId: action.sid, clientIP: action.clientIP, userAgent: action.userAgent, requests: [action.req], createdAt: Date.now(), lastActivity: Date.now() },
         ];
       }
       return { sessions };
@@ -355,8 +356,12 @@ export function useStore() {
 
   const handleMessage = useCallback((msg: JsonRpcMessage) => {
     const meta = msg.meta;
-    if (!meta?.session_id || !meta?.request_id || !msg.method) return;
-    const { session_id: sid, request_id: rid } = meta;
+    if (!meta?.request_id || !msg.method) return;
+    const rid = meta.request_id;
+    // 部分客户端没有传会话头，后端 meta.session_id 为空；不能因此丢弃交互式请求。
+    // 兜底规则：session_id > client_ip > request_id。
+    const sid = meta.session_id || meta.client_ip || rid;
+    const clientIP = meta.client_ip || "Unknown IP";
     const userAgent = meta.user_agent || "Unknown";
 
     switch (msg.method) {
@@ -364,7 +369,7 @@ export function useStore() {
         const params = msg.params as { messages?: Array<{ role?: string; content?: unknown }>; model?: string } | null;
         const userMessage = latestChatUserMessage(params);
         const req: RequestData = { requestId: rid, userMessage, model: params?.model || "unknown", usage: null, error: null, done: false, timestamp: Date.now(), text: "", thinking: "", toolCalls: [] };
-        dispatch({ type: "new", sid, userAgent, req });
+        dispatch({ type: "new", sid, clientIP, userAgent, req });
         addAudit(msg, rid, sid, userAgent, req.model, userMessage, params);
         break;
       }
@@ -374,7 +379,7 @@ export function useStore() {
         const userMessage = latestResponseInput(params);
         const model = typeof params?.model === "string" ? params.model : "responses";
         const req: RequestData = { requestId: rid, userMessage, model, usage: null, error: null, done: false, timestamp: Date.now(), text: "", thinking: "", toolCalls: [] };
-        dispatch({ type: "new", sid, userAgent, req });
+        dispatch({ type: "new", sid, clientIP, userAgent, req });
         addAudit(msg, rid, sid, userAgent, model, userMessage, params);
         break;
       }
