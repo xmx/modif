@@ -38,6 +38,8 @@ resources/config/*.jsonc
 !resources/config/application-example.jsonc
 
 resources/static/dist
+resources/temp
+resources/test
 
 .crash.txt
 

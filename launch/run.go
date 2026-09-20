@@ -9,14 +9,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
-	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 	"github.com/xmx/modif/application/aigate/aiflow"
 	"github.com/xmx/modif/application/aigate/process"
-	aiapi "github.com/xmx/modif/application/aigate/restapi"
+	gateapi "github.com/xmx/modif/application/aigate/restapi"
 	"github.com/xmx/modif/application/echox"
 	manaapi "github.com/xmx/modif/application/manager/restapi"
+	"github.com/xmx/modif/component"
 	"github.com/xmx/modif/config"
 	"github.com/xmx/modif/library/netutil"
 	"github.com/xmx/modif/library/tlscert"
@@ -34,28 +34,41 @@ func Run(ctx context.Context, cfg string) error {
 //goland:noinspection GoUnhandledErrorResult
 func Exec(ctx context.Context, cfg *config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
-	cli := openai.NewClient(
-		option.WithBaseURL(cfg.OpenAI.BaseURL),
-		option.WithAPIKey(cfg.OpenAI.APIKey),
-	)
-	hub := aiflow.NewHub()
+	e := echo.New()
+	eg := echox.NewGroup(e)
 
-	chatCompletionProc := process.NewChatCompletion(cli, hub, log)
-	responseProc := process.NewResponse(cli, hub, log)
-	routes := echox.RouteRegisters{
-		aiapi.NewChatCompletion(chatCompletionProc),
-		aiapi.NewResponse(responseProc),
-		manaapi.NewInspect(hub, log),
+	opts := []gontainer.Option{
+		gontainer.NewService(cfg),        // 配置文件
+		gontainer.NewService(cfg.Server), // 配置文件
+		gontainer.NewService(cfg.OpenAI), // 配置文件
+		gontainer.NewService(log),        // 全局日志
+
+		gontainer.NewFactory(echox.NewWebsocketUpgrade), // Websocket Upgrade
+		gontainer.NewFactory(aiflow.NewHub),
+		gontainer.NewFactory(component.NewOpenAI),
+
+		// AI Process
+		gontainer.NewFactory(process.NewChatCompletion),
+		gontainer.NewFactory(process.NewResponse),
+
+		// AI API
+		gontainer.NewFactory(gateapi.NewChatCompletion),
+		gontainer.NewFactory(gateapi.NewResponse),
+
+		// Manager API
+		gontainer.NewFactory(manaapi.NewInspect),
+
+		gontainer.NewEntrypoint(eg.Registers), // 注册路由
+	}
+	if err := gontainer.Run(opts...); err != nil {
+		return err
 	}
 
-	e := echo.New()
-	e.HTTPErrorHandler = echox.HandleError
-
-	eg := echox.NewGroup(e)
-	routes.RegisterRoute(eg)
+	// 最后管理容器组件
+	manaapi.NewInject(opts).RegisterRoute(eg)
 
 	selfTLS := tlscert.NewMatch(nil, log) // 临时自签证书
-	const addr = "0.0.0.0:8866"
+	addr := cfg.Server.Addr
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           e,
@@ -80,5 +93,5 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	cause := context.Cause(ctx)
 	log.Error("程序停止运行", "err", err, "cause", cause)
 
-	return nil
+	return err
 }

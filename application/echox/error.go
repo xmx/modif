@@ -9,6 +9,11 @@ import (
 )
 
 func HandleError(c *echo.Context, err error) {
+	resp := c.Response()
+	if ersp, ok := resp.(*echo.Response); ok && ersp.Committed {
+		return
+	}
+
 	code := http.StatusBadRequest
 	msg := new(AIErrorMessage)
 	switch ev := err.(type) {
@@ -40,22 +45,3 @@ type AIErrorMessage struct {
 type AIErrorResponse struct {
 	Error *AIErrorMessage `json:"error"`
 }
-
-//type Error struct {
-//	Code    string `json:"code" api:"required"`
-//	Message string `json:"message" api:"required"`
-//	Param   string `json:"param" api:"required"`
-//	Type    string `json:"type" api:"required"`
-//	// JSON contains metadata for fields, check presence with [respjson.Field.Valid].
-//	JSON struct {
-//		Code        respjson.Field
-//		Message     respjson.Field
-//		Param       respjson.Field
-//		Type        respjson.Field
-//		ExtraFields map[string]respjson.Field
-//		raw         string
-//	} `json:"-"`
-//	StatusCode int
-//	Request    *http.Request
-//	Response   *http.Response
-//}

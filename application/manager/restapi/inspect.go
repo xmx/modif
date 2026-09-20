@@ -2,7 +2,6 @@ package restapi
 
 import (
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,21 +16,15 @@ import (
 
 type Inspect struct {
 	hub aiflow.Huber
+	wsu *websocket.Upgrader
 	log *slog.Logger
-	upg *websocket.Upgrader
 }
 
-func NewInspect(hub aiflow.Huber, log *slog.Logger) *Inspect {
+func NewInspect(hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *Inspect {
 	return &Inspect{
 		hub: hub,
+		wsu: wsu,
 		log: log,
-		upg: &websocket.Upgrader{
-			HandshakeTimeout:  5 * time.Second,
-			ReadBufferSize:    4096,
-			WriteBufferSize:   4096,
-			CheckOrigin:       func(*http.Request) bool { return true },
-			EnableCompression: true,
-		},
 	}
 }
 
@@ -41,14 +34,15 @@ func (ist *Inspect) RegisterRoute(g echox.Group) {
 
 func (ist *Inspect) attach(c *echo.Context) error {
 	w, r := c.Response(), c.Request()
-	ws, err := ist.upg.Upgrade(w, r, nil)
+	ws, err := ist.wsu.Upgrade(w, r, nil)
 	if err != nil {
+		ist.log.Warn("websocket 协议升级失败", "err", err)
 		return err
 	}
 
 	ctx := r.Context()
-	log := jsonrpc.NewLogger(ist.log)
-	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, jsonrpc2.SetLogger(log))
+	opts := jsonrpc2.SetLogger(jsonrpc.NewLogger(ist.log))
+	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, opts)
 	defer conn.Close()
 
 	consume := wsocket.NewRPC(conn)
@@ -59,7 +53,30 @@ func (ist *Inspect) attach(c *echo.Context) error {
 		ist.hub.DelResponse(consume)
 	}()
 
-	<-conn.DisconnectNotify()
+	var fails int
+	var closed bool
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for !closed {
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			closed = true
+		case <-conn.DisconnectNotify():
+			closed = true
+			err = jsonrpc2.ErrClosed
+		case now := <-ticker.C:
+			dead := now.Add(5 * time.Second)
+			if err = ws.WriteControl(websocket.PingMessage, nil, dead); err == nil {
+				fails = 0
+			} else {
+				fails++
+				closed = fails >= 3
+			}
+		}
+	}
+	ist.log.Info("websocket 连接已断开", "fails", fails, "err", err)
 
 	return nil
 }

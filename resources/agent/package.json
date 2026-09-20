@@ -1,0 +1,25 @@
+{
+  "name": "modif-inspect-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MODIF 网关的订阅 agent：订阅 /api/inspect/attach 事件流，把 skills 目录里的 skill 附加到每个请求体",
+  "type": "commonjs",
+  "main": "index.js",
+  "bin": {
+    "modif-inspect-agent": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "selftest": "node selftest.js",
+    "e2e": "node test-e2e.js",
+    "test": "node selftest.js && node test-e2e.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "jsonc-parser": "^3.3.1",
+    "ws": "^8.21.3"
+  }
+}

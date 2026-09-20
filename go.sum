@@ -1,3 +1,7 @@
+github.com/NVIDIA/gontainer/v2 v2.5.1 h1:Gq6RkFkKUZoioGHKr2KdXj+ACGV0zVMhgZyAaz5+M8I=
+github.com/NVIDIA/gontainer/v2 v2.5.1/go.mod h1:itUlioyrCwQsdDi5bY1T1WW4S6uvsVaRIEiCaOehi10=
+github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
+github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
@@ -6,6 +10,8 @@ github.com/labstack/echo/v5 v5.3.1 h1:75maCxkQVGualckLc/5s/ihgpH1a1Dc6AuGWNVNs6b
 github.com/labstack/echo/v5 v5.3.1/go.mod h1:4iEGNQiPPZnkfYpNR/L6fINd3NLiGWUD5+eBotFALas=
 github.com/openai/openai-go/v3 v3.61.0 h1:nMLuGFdKBF0sB3qFVNwE8kpBpenVN1ucYRoKcx7E1u0=
 github.com/openai/openai-go/v3 v3.61.0/go.mod h1:ufI1+K+t0ijRB3gk8eztiw1crcDpsBuxRQL4sbLIrts=
+github.com/openai/openai-go/v3 v3.64.0 h1:352b0v1YtNDuDEMeX8Y+3+2mTjyZUupy+FmsrFsUK9g=
+github.com/openai/openai-go/v3 v3.64.0/go.mod h1:dE39tezpSvL+SHpkZQm7XhSc8BOLDzu8CEh1mHc9MzU=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/sourcegraph/jsonrpc2 v0.2.3 h1:0VYp5WZ2irQvRK8OKKxZAbbplj6Pmda07MXm+Mdz3GQ=

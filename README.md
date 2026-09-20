@@ -1,11 +1,15 @@
 # MODIF
 
 MODIF 是一个 AI 网关，对外提供 OpenAI 兼容的接口，把请求转发给上游真实的模型服务，
-同时把每一次对话的细节通过 WebSocket 实时推送给观察者，方便调试、审计或做可视化展示。
+同时把每一次对话的细节通过 WebSocket 实时推送给观察者，方便调试、审计、审批或做可视化展示。
 
 ## 当前状态
 
-项目仍在开发中，功能还不完整。目前只实现了 `chat/completions` 这一种接口的转发与监听，并且只支持流式响应。
+项目仍在开发中，目前实现了以下接口：
+
+- `POST /v1/chat/completions`：聊天补全，支持流式
+- `POST /v1/responses`：OpenAI Responses 接口，支持流式
+- `GET /v1/models`：模型列表
 
 ## 运行
 
@@ -40,7 +44,7 @@ go run main/main.go
 go run main/main.go -c /path/to/application.jsonc
 ```
 
-服务监听在 `0.0.0.0:8866`，启动后日志会打印可供客户端访问的地址。按 `Ctrl+C` 停止。
+服务监听在 `0.0.0.0:8866`。按 `Ctrl+C` 停止。
 
 ### 前端
 
@@ -57,28 +61,59 @@ npm run dev
 
 ## WebSocket 监听约定
 
-连接 `ws://localhost:8866/api/inspect/attach`，使用 JSON-RPC 2.0 协议，所有消息均为通知（notification），观察者无需响应。
+连接 `ws://localhost:8866/api/inspect/attach`，使用 JSON-RPC 2.0 协议。
+按是否需要观察者响应，消息分为两类：
+
+- **请求（request）**：`chat-completion-new`、`response-new`，观察者必须响应
+- **通知（notification）**：其余事件，观察者无需响应
 
 ### 消息元信息（meta）
 
 每条消息都带有 `meta`，字段如下：
 
-| 字段         | 说明                                                                         |
-|--------------|------------------------------------------------------------------------------|
-| `request_id` | 每次请求的唯一 ID                                                            |
-| `session_id` | 会话 ID，取自请求头 `X-Session-Id`（opencode）或 `Agent-Session-Id`（goose） |
-| `user_agent` | 发起请求的 User-Agent                                                        |
+| 字段              | 说明                                                                                |
+|-------------------|-------------------------------------------------------------------------------------|
+| `client_ip`       | 发起请求的客户端 IP                                                                 |
+| `request_id`      | 请求 ID，优先取请求头 `X-Request-Id` 或 `X-Conversation-Request-Id`，没有则自动生成 |
+| `session_id`      | 会话 ID，取自请求头，见下方说明                                                     |
+| `thread_id`       | 线程 ID（预留）                                                                     |
+| `user_agent`      | 发起请求的 User-Agent                                                               |
+| `timeout_seconds` | 请求类消息的响应超时时间（秒），仅 request 类消息携带                               |
+
+`session_id` 依次尝试这些请求头：
+
+| 来源            | 请求头                               |
+|-----------------|--------------------------------------|
+| opencode / kilo | `X-Session-Id`、`X-Session-Affinity` |
+| goose           | `Agent-Session-Id`                   |
+| CodeBuddy       | `X-Conversation-Id`                  |
+| codex           | `session-id`                         |
 
 ### method 约定
 
-method 统一以 `modif/` 为前缀，按一次请求的生命周期依次推送：
+method 统一以 `modif/` 为前缀，按一次请求的生命周期依次推送。
+下表按类型区分：`new` 为请求（需响应），其余为通知（无需响应）。
 
-| method                        | 触发时机             | params                                                               |
-|-------------------------------|----------------------|----------------------------------------------------------------------|
-| `modif/chat-completion-new`   | 收到请求时           | OpenAI 的 `ChatCompletionNewParams`，含 `messages`、`model` 等       |
-| `modif/chat-completion-chunk` | 每收到一个流式分片时 | OpenAI 的 `ChatCompletionChunk`，含 `choices[].delta` 与可选 `usage` |
-| `modif/chat-completion-usage` | 收到用量统计时       | `{ prompt_tokens, completion_tokens, total_tokens }`                 |
-| `modif/chat-completion-done`  | 请求正常结束时       | `null`                                                               |
-| `modif/chat-completion-error` | 报错时               | `{ code, message }`                                                  |
+#### ChatCompletion
 
-其中 `chat-completion-chunk` 的 `delta` 里包含正文 `content`、思考内容 `reasoning_content` 以及工具调用增量 `tool_calls`。
+| method                        | 类型   | 触发时机                     | params                                                          |
+|-------------------------------|--------|------------------------------|-----------------------------------------------------------------|
+| `modif/chat-completion-new`   | 请求   | 收到聊天补全请求时           | OpenAI 的 `ChatCompletionNewParams`                             |
+| `modif/chat-completion-chunk` | 通知   | 每收到一个流式分片时         | `ChatCompletionChunk`，含 `choices[].delta`，末尾分片带 `usage` |
+| `modif/chat-completion-done`  | 通知   | 聊天补全正常结束时           | `null`                                                          |
+| `modif/chat-completion-error` | 通知   | 聊天补全出错时               | JSON-RPC 错误对象                                               |
+
+#### Response
+
+| method                 | 类型   | 触发时机                     | params                                    |
+|------------------------|--------|------------------------------|-------------------------------------------|
+| `modif/response-new`   | 请求   | 收到 Responses 请求时        | OpenAI 的 `ResponseNewParams`             |
+| `modif/response-chunk` | 通知   | 每收到一个流式事件时         | `ResponseStreamEvent`，部分事件带 `usage` |
+| `modif/response-done`  | 通知   | Responses 正常结束时         | `null`                                    |
+| `modif/response-error` | 通知   | Responses 出错时             | JSON-RPC 错误对象                         |
+
+`new` 方法需要观察者响应：
+
+- 返回 `result`（修改后的参数），网关用它继续请求上游
+- 返回 `error`，该请求被拒绝
+- 超时（默认 10 秒）或连接断开，网关用原始参数继续请求

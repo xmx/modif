@@ -1,6 +1,9 @@
 package echox
 
-import "github.com/labstack/echo/v5"
+import (
+	"github.com/NVIDIA/gontainer/v2"
+	"github.com/labstack/echo/v5"
+)
 
 type Group struct {
 	V1  *echo.Group // /v1
@@ -14,14 +17,12 @@ func NewGroup(e *echo.Echo) Group {
 	}
 }
 
-type RouteRegister interface {
-	RegisterRoute(g Group)
+func (g Group) Registers(rts gontainer.Multiple[RouteRegister]) {
+	for _, rt := range rts {
+		rt.RegisterRoute(g)
+	}
 }
 
-type RouteRegisters []RouteRegister
-
-func (rrs RouteRegisters) RegisterRoute(g Group) {
-	for _, rr := range rrs {
-		rr.RegisterRoute(g)
-	}
+type RouteRegister interface {
+	RegisterRoute(g Group)
 }
