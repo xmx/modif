@@ -1,6 +1,7 @@
 import type { SessionData } from "@/hooks/useStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { UISwitch } from "@/components/UISwitch";
 import { ModifLogo } from "@/components/ModifLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ export function Sidebar({ sessions, selectedSessionId, connected, onSelectSessio
               {connected ? "已连接 · 点击断开" : "已断开 · 点击连接"}
             </TooltipContent>
           </Tooltip>
+          <UISwitch />
           <ThemeToggle />
         </div>
       </div>

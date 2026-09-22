@@ -14,6 +14,17 @@ func HandleError(c *echo.Context, err error) {
 		return
 	}
 
+	flag := CheckFlag(c)
+	if flag.OpenAI {
+		handleOpenAIError(c, err)
+		return
+	}
+
+	fallback := ProblemDetailsHTTPErrorHandler(true)
+	fallback(c, err)
+}
+
+func handleOpenAIError(c *echo.Context, err error) {
 	code := http.StatusBadRequest
 	msg := new(AIErrorMessage)
 	switch ev := err.(type) {

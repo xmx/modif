@@ -19,10 +19,13 @@ func NewResponse(proc *process.Response) *Response {
 }
 
 func (rsp *Response) RegisterRoute(g echox.Group) {
-	g.V1.POST("/responses", rsp.responses)
+	g.V1.Group.POST("/responses", rsp.responses)
 }
 
 func (rsp *Response) responses(c *echo.Context) error {
+	flag := echox.CheckFlag(c)
+	flag.OpenAI = true
+
 	w, r := c.Response(), c.Request()
 	var params responses.ResponseNewParams
 	if err := c.Bind(&params); err != nil {

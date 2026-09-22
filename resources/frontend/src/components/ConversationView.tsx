@@ -11,6 +11,7 @@ import {
   WrenchIcon,
   BotIcon,
   CircleUserRoundIcon,
+  HelpCircleIcon,
 } from "lucide-react";
 
 export function ConversationView({ sessions, selectedSessionId }: { sessions: SessionData[]; selectedSessionId: string | null }) {
@@ -135,11 +136,142 @@ function formatArguments(raw: string): string {
   }
 }
 
+interface InteractionOption {
+  label: string;
+  description?: string;
+}
+
+interface InteractionQuestion {
+  header?: string;
+  question: string;
+  options: InteractionOption[];
+}
+
+// 交互式提问的参数格式不统一，这里尽量兼容两种常见形态：
+//   A. { question: string, options: (string | { label, description })[] }
+//   B. { questions: [{ header?, question, options: [...] }] }
+// 其余视为非交互式。
+function parseInteractions(raw: string): InteractionQuestion[] {
+  if (!raw) return [];
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  const q = (item: Record<string, unknown>): InteractionQuestion | null => {
+    const question = typeof item.question === "string" ? item.question : null;
+    if (!question) return null;
+    const header = typeof item.header === "string" ? item.header : undefined;
+    const options = Array.isArray(item.options)
+      ? item.options.map(parseOption).filter((o): o is InteractionOption => o !== null)
+      : [];
+    return { header, question, options };
+  };
+
+  // 形态 B：questions 数组
+  if (Array.isArray(obj.questions)) {
+    return obj.questions
+      .filter((v): v is Record<string, unknown> => !!v && typeof v === "object")
+      .map(q)
+      .filter((v): v is InteractionQuestion => v !== null);
+  }
+
+  // 形态 A：直接的 question + options
+  const single = q(obj);
+  return single ? [single] : [];
+}
+
+function parseOption(v: unknown): InteractionOption | null {
+  if (typeof v === "string") return { label: v };
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const label = [o.label, o.name, o.title].find((x) => typeof x === "string");
+  if (!label) return null;
+  const description = [o.description, o.desc].find((x) => typeof x === "string");
+  return { label, description };
+}
+
+const QUESTION_TOOL_NAMES = new Set(["question", "ask_question", "askQuestion", "interactive", "interaction"]);
+
+function isInteractionCall(call: ToolCallData): boolean {
+  if (QUESTION_TOOL_NAMES.has(call.name) || call.name.endsWith("_question") || call.name.endsWith("-question")) {
+    return true;
+  }
+  // 名字不匹配时，退回到按参数结构判断。
+  return parseInteractions(call.arguments).length > 0;
+}
+
+// 交互式提问专用卡片：可含标题、提问、选项（选项可带描述）
+const QuestionToolBlock = memo(function QuestionToolBlock({ call }: { call: ToolCallData }) {
+  const questions = parseInteractions(call.arguments);
+  return (
+    <div className="overflow-hidden rounded-lg border bg-muted/40">
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <HelpCircleIcon className="size-3.5 shrink-0 text-primary" />
+        <span className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+          提问
+        </span>
+        {call.id && (
+          <span className="ml-auto truncate text-[0.6rem] text-muted-foreground">
+            #{call.id}
+          </span>
+        )}
+      </div>
+      {questions.length > 0 ? (
+        <div className="flex flex-col gap-3 px-3 py-2.5">
+          {questions.map((q, qi) => (
+            <div key={`${q.question}-${qi}`} className="flex flex-col gap-2">
+              {q.header && (
+                <div className="text-xs font-semibold text-foreground">{q.header}</div>
+              )}
+              <p className="text-sm">{q.question}</p>
+              {q.options.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {q.options.map((opt, i) => (
+                    <div
+                      key={`${opt.label}-${i}`}
+                      className="flex items-center gap-2 rounded-md border bg-background/60 px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.6rem] font-medium text-primary">
+                        {i + 1}
+                      </span>
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate font-medium">{opt.label}</span>
+                        {opt.description && (
+                          <span className="truncate text-[0.65rem] text-muted-foreground">
+                            {opt.description}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-3 py-2 text-[0.75rem] leading-relaxed text-foreground">
+          <pre className="overflow-x-auto">
+            <code>{formatArguments(call.arguments)}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+});
+
 const ToolCallBlock = memo(function ToolCallBlock({ calls }: { calls: ToolCallData[] }) {
   if (calls.length === 0) return null;
   return (
     <div className="my-2 flex flex-col gap-2">
-      {calls.map((call, i) => (
+      {calls.map((call, i) => {
+        if (isInteractionCall(call)) {
+          return <QuestionToolBlock key={call.id || `${call.name}-${i}`} call={call} />;
+        }
+        return (
         <div
           key={call.id || `${call.name}-${i}`}
           className="overflow-hidden rounded-lg border bg-muted/40"
@@ -175,7 +307,8 @@ const ToolCallBlock = memo(function ToolCallBlock({ calls }: { calls: ToolCallDa
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 });

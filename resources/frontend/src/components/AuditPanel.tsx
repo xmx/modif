@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AuditItem, AuditBlock } from "@/hooks/useStore";
 import {
   CheckIcon,
   BanIcon,
   FileSearchIcon,
-  AlertTriangleIcon,
   CodeIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+
+// CodeMirror 体积较大，按需懒加载，避免打进主 bundle。
+const JsonEditor = lazy(() => import("@/components/JsonEditor"));
 
 const BLOCK_REASONS = [
   { label: "涉政", message: "内容涉及敏感政治话题" },
@@ -89,6 +90,24 @@ function useCountdown(seconds: number | null, onExpire: () => void) {
   return remaining;
 }
 
+// 检测全局主题是否为深色，用于切换 CodeMirror 明暗配色。
+function useIsDark() {
+  const [dark, setDark] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+  );
+
+  useEffect(() => {
+    const el = document.documentElement;
+    const update = () => setDark(el.classList.contains("dark"));
+    const mo = new MutationObserver(update);
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+    update();
+    return () => mo.disconnect();
+  }, []);
+
+  return dark;
+}
+
 // 把修改后的最新用户消息写回 params：
 // - chat completions: messages 中最后一条 role=user 的 content
 // - responses: input 字符串，或 input 数组中最后一条 role=user 的 content/input_text
@@ -138,6 +157,7 @@ function applyUserEdit(params: unknown, newContent: string): unknown {
 function AuditItemCard({ item, onResolve, onBlock, onDismiss }: AuditItemCardProps) {
   const [text, setText] = useState(item.paramsRaw);
   const [userText, setUserText] = useState(item.userMessage ?? "");
+  const dark = useIsDark();
 
   // 当切换 item 时同步文本内容（例如队列变化）
   useEffect(() => {
@@ -197,27 +217,21 @@ function AuditItemCard({ item, onResolve, onBlock, onDismiss }: AuditItemCardPro
         )}
       </div>
 
-      {/* params JSON 编辑器 */}
+      {/* params JSON 编辑器（CodeMirror，支持高亮 + JSON 错误提示） */}
       <div className="px-3 pb-2">
         <div className="mb-1 flex items-center gap-1 text-[0.65rem] text-muted-foreground">
           <CodeIcon className="size-3" />
           <span>请求参数（可直接改写后提交）</span>
         </div>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          spellCheck={false}
-          className={cn(
-            "h-40 w-full resize-y rounded-md border bg-muted/40 p-2 font-mono text-[0.7rem] leading-relaxed outline-none focus:ring-1 focus:ring-ring",
-            jsonError ? "border-destructive/60" : "border-border"
-          )}
-        />
-        {jsonError && (
-          <div className="mt-1 flex items-center gap-1 text-[0.65rem] text-destructive">
-            <AlertTriangleIcon className="size-3" />
-            <span className="truncate">{jsonError}</span>
-          </div>
-        )}
+        <Suspense
+          fallback={
+            <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
+              加载编辑器…
+            </div>
+          }
+        >
+          <JsonEditor value={text} onChange={setText} dark={dark} />
+        </Suspense>
       </div>
 
       {/* 操作区：第一行改写提交（含倒数），第二行并排阻断快捷按钮 */}
@@ -225,6 +239,7 @@ function AuditItemCard({ item, onResolve, onBlock, onDismiss }: AuditItemCardPro
         <button
           onClick={approve}
           disabled={!!jsonError}
+          title={jsonError ?? undefined}
           className="inline-flex items-center justify-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CheckIcon className="size-3.5" />

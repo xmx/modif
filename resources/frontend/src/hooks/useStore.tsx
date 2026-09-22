@@ -28,6 +28,8 @@ export interface AuditBlock {
 }
 
 export interface ToolCallData {
+  /** OpenAI 流式 delta 里的 tool_calls[].index，用于把分片归并到正确的工具调用 */
+  index: number;
   id: string;
   name: string;
   arguments: string;
@@ -76,19 +78,23 @@ type Action =
   | { type: "error"; rid: string; error: RequestData["error"] };
 
 function mergeToolCalls(prev: ToolCallData[], deltas: ToolCallData[]): ToolCallData[] {
-  const next = prev.map((t) => ({ ...t, arguments: t.arguments }));
-  for (let i = 0; i < deltas.length; i++) {
-    const d = deltas[i];
-    if (!next[i]) {
-      next[i] = { ...d };
-    } else {
-      const cur = next[i];
-      if (d.id) cur.id = d.id;
-      if (d.name) cur.name += d.name;
-      if (d.arguments) cur.arguments += d.arguments;
+  // 按 index 归位，index 相同的是同一次调用的分段，需合并。
+  const byIndex = new Map<number, ToolCallData>();
+  for (const t of prev) byIndex.set(t.index, { ...t, arguments: t.arguments });
+
+  for (const d of deltas) {
+    const cur = byIndex.get(d.index);
+    if (!cur) {
+      byIndex.set(d.index, { index: d.index, id: d.id, name: d.name, arguments: d.arguments });
+      continue;
     }
+    if (d.id) cur.id = d.id;
+    if (d.name) cur.name += d.name;
+    if (d.arguments) cur.arguments += d.arguments;
   }
-  return next;
+
+  // 按 index 升序还原，保证多个工具调用的显示顺序稳定。
+  return Array.from(byIndex.values()).sort((a, b) => a.index - b.index);
 }
 
 function reducer(state: State, action: Action): State {
@@ -244,7 +250,9 @@ function responseToolCall(event: Record<string, unknown>): ToolCallData[] {
   const type = String(v.type ?? "");
   if (!type.includes("function") && !type.includes("tool")) return [];
   const fn = (v.function ?? {}) as Record<string, unknown>;
+  const index = typeof v.index === "number" ? v.index : 0;
   return [{
+    index,
     id: typeof v.id === "string" ? v.id : typeof v.call_id === "string" ? v.call_id : "",
     name: typeof v.name === "string" ? v.name : typeof fn.name === "string" ? fn.name : type,
     arguments: typeof v.arguments === "string" ? v.arguments : typeof fn.arguments === "string" ? fn.arguments : "",
@@ -270,6 +278,7 @@ function chatChunkUpdate(chunk: Record<string, unknown>): ChunkUpdate {
             const t = tc as Record<string, unknown>;
             const fn = (t.function ?? {}) as { name?: unknown; arguments?: unknown };
             return {
+              index: typeof t.index === "number" ? t.index : 0,
               id: typeof t.id === "string" ? t.id : "",
               name: typeof fn.name === "string" ? fn.name : "",
               arguments: typeof fn.arguments === "string" ? fn.arguments : "",

@@ -35,12 +35,14 @@ func Run(ctx context.Context, cfg string) error {
 func Exec(ctx context.Context, cfg *config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	e := echo.New()
+	e.HTTPErrorHandler = echox.HandleError
 	eg := echox.NewGroup(e)
 
 	opts := []gontainer.Option{
 		gontainer.NewService(cfg),        // 配置文件
 		gontainer.NewService(cfg.Server), // 配置文件
 		gontainer.NewService(cfg.OpenAI), // 配置文件
+		gontainer.NewService(cfg.Static), // 配置文件
 		gontainer.NewService(log),        // 全局日志
 
 		gontainer.NewFactory(echox.NewWebsocketUpgrade), // Websocket Upgrade
@@ -57,6 +59,8 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 
 		// Manager API
 		gontainer.NewFactory(manaapi.NewInspect),
+		gontainer.NewFactory(manaapi.NewRoute),
+		gontainer.NewService(manaapi.NewWebDAV("/")),
 
 		gontainer.NewEntrypoint(eg.Registers), // 注册路由
 	}

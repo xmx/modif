@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/sourcegraph/jsonrpc2"
 )
@@ -17,5 +18,5 @@ type logger struct {
 
 func (l *logger) Printf(format string, v ...any) {
 	msg := fmt.Sprintf(format, v...)
-	l.log.Info(msg)
+	l.log.Info(strings.TrimSuffix(msg, "\n"))
 }

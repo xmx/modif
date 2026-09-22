@@ -29,7 +29,7 @@ func NewInspect(hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *In
 }
 
 func (ist *Inspect) RegisterRoute(g echox.Group) {
-	g.API.GET("/inspect/attach", ist.attach)
+	g.API.Group.GET("/inspect/attach", ist.attach)
 }
 
 func (ist *Inspect) attach(c *echo.Context) error {

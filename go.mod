@@ -6,8 +6,9 @@ require (
 	github.com/NVIDIA/gontainer/v2 v2.5.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/labstack/echo/v5 v5.3.1
-	github.com/openai/openai-go/v3 v3.64.0
+	github.com/openai/openai-go/v3 v3.64.3
 	github.com/sourcegraph/jsonrpc2 v0.2.3
+	golang.org/x/net v0.59.0
 )
 
 require (

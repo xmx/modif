@@ -6,14 +6,28 @@ import (
 )
 
 type Group struct {
-	V1  *echo.Group // /v1
-	API *echo.Group // /api
+	Echo *echo.Echo
+	V1   EchoGroup // /v1
+	API  EchoGroup // /api
 }
 
 func NewGroup(e *echo.Echo) Group {
 	return Group{
-		V1:  e.Group("/v1"),
-		API: e.Group("/api"),
+		Echo: e,
+		V1:   NewEchoGroup(e, "/v1"),
+		API:  NewEchoGroup(e, "/api"),
+	}
+}
+
+type EchoGroup struct {
+	Prefix string
+	Group  *echo.Group
+}
+
+func NewEchoGroup(e *echo.Echo, prefix string) EchoGroup {
+	return EchoGroup{
+		Prefix: prefix,
+		Group:  e.Group(prefix),
 	}
 }
 

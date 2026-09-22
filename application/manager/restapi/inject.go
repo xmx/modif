@@ -20,7 +20,7 @@ func NewInject(opts []gontainer.Option) *Inject {
 }
 
 func (inj *Inject) RegisterRoute(g echox.Group) {
-	g.API.GET("/inject/components", inj.components)
+	g.API.Group.GET("/inject/components", inj.components)
 }
 
 func (inj *Inject) components(c *echo.Context) error {

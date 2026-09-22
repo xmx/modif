@@ -1,15 +1,14 @@
 package config
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
+	"io/fs"
 	"os"
 )
 
 type Config struct {
-	Server Server `json:"server"`
-	OpenAI OpenAI `json:"openai"`
+	Server Server              `json:"server"`
+	OpenAI OpenAI              `json:"openai"`
+	Static map[string][]Static `json:"static"`
 }
 
 type Server struct {
@@ -21,32 +20,23 @@ type OpenAI struct {
 	APIKey  string `json:"api_key"`
 }
 
-// JSONC 方式读取配置文件，由于这种方式不是流式读取，为了防止误读大文件
-// 导致 OOM，可以选择一个合适的值限制最大读取量。
-func JSONC(filename string, maxsize ...int64) (*Config, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
+type Static struct {
+	Path string `json:"path" validate:"required"`
+	Slug string `json:"slug" validate:"required"`
+	Name string `json:"name" validate:"required"`
+	SPA  bool   `json:"spa"`
+}
 
-	var lr io.Reader = f
-	if len(maxsize) > 0 && maxsize[0] > 0 {
-		lr = io.LimitReader(lr, maxsize[0])
-	}
+func (s Static) Open(name string) (fs.File, error) {
+	const spaIndex = "index.html"
 
-	raw, err := io.ReadAll(lr)
-	if err != nil {
-		return nil, err
-	}
-
-	bs := toJSON(raw, nil)
-	cfg := new(Config)
-	dec := json.NewDecoder(bytes.NewReader(bs))
-	dec.DisallowUnknownFields() // 严格模式
-	if err = dec.Decode(cfg); err != nil {
-		return nil, err
+	dfs := os.DirFS(s.Path)
+	if f, err := dfs.Open(name); err == nil ||
+		name == spaIndex ||
+		!s.SPA ||
+		!os.IsNotExist(err) {
+		return f, err
 	}
 
-	return cfg, nil
+	return dfs.Open(spaIndex)
 }
