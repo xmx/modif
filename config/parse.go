@@ -9,10 +9,11 @@ import (
 
 // JSONC 方式读取配置文件，由于这种方式不是流式读取，为了防止误读大文件
 // 导致 OOM，可以选择一个合适的值限制最大读取量。
-func JSONC(filename string, maxsize ...int64) (*Config, error) {
+func JSONC(filename string, maxsize ...int64) (Config, error) {
+	var cfg Config
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return cfg, err
 	}
 	defer f.Close()
 
@@ -23,16 +24,13 @@ func JSONC(filename string, maxsize ...int64) (*Config, error) {
 
 	raw, err := io.ReadAll(lr)
 	if err != nil {
-		return nil, err
+		return cfg, err
 	}
 
 	bs := toJSON(raw, nil)
-	cfg := new(Config)
 	dec := json.NewDecoder(bytes.NewReader(bs))
 	dec.DisallowUnknownFields() // 严格模式
-	if err = dec.Decode(cfg); err != nil {
-		return nil, err
-	}
+	err = dec.Decode(&cfg)
 
-	return cfg, nil
+	return cfg, err
 }

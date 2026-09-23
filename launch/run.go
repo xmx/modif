@@ -33,7 +33,7 @@ func Run(ctx context.Context, cfg string) error {
 }
 
 //goland:noinspection GoUnhandledErrorResult
-func Exec(ctx context.Context, cfg *config.Config) error {
+func Exec(ctx context.Context, cfg config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	e := echo.New()
 	e.HTTPErrorHandler = echox.HandleError

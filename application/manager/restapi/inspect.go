@@ -11,17 +11,20 @@ import (
 	"github.com/xmx/modif/application/aigate/aiflow"
 	"github.com/xmx/modif/application/echox"
 	"github.com/xmx/modif/application/manager/wsocket"
+	"github.com/xmx/modif/config"
 	"github.com/xmx/modif/library/jsonrpc"
 )
 
 type Inspect struct {
+	cfg config.Config
 	hub aiflow.Huber
 	wsu *websocket.Upgrader
 	log *slog.Logger
 }
 
-func NewInspect(hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *Inspect {
+func NewInspect(cfg config.Config, hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *Inspect {
 	return &Inspect{
+		cfg: cfg,
 		hub: hub,
 		wsu: wsu,
 		log: log,
@@ -51,7 +54,7 @@ func (ist *Inspect) attach(c *echo.Context) error {
 	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, opts)
 	defer conn.Close()
 
-	consume := wsocket.NewRPC(conn)
+	consume := wsocket.NewRPC(conn, ist.cfg.Notify)
 	ist.hub.AddChatCompletion(consume)
 	ist.hub.AddResponse(consume)
 	defer func() {

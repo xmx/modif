@@ -15,14 +15,19 @@ import (
 
 type RPC struct {
 	stm *jsonrpc2.Conn
+	ntf bool
 }
 
-func NewRPC(stm *jsonrpc2.Conn) *RPC {
-	return &RPC{stm: stm}
+func NewRPC(stm *jsonrpc2.Conn, notify bool) *RPC {
+	return &RPC{stm: stm, ntf: notify}
 }
 
 func (wc *RPC) ChatCompletionNew(rc *aiflow.RequestContext, params openai.ChatCompletionNewParams) (openai.ChatCompletionNewParams, error) {
 	const method = methodPrefix + "chat-completion-new"
+	if wc.ntf {
+		_ = wc.notify(rc, method, params)
+		return params, nil
+	}
 
 	var result openai.ChatCompletionNewParams
 	err := wc.call(rc, method, params, &result)
