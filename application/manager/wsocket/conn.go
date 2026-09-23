@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -15,16 +16,16 @@ import (
 
 type RPC struct {
 	stm *jsonrpc2.Conn
-	ntf bool
+	rew *atomic.Bool
 }
 
-func NewRPC(stm *jsonrpc2.Conn, notify bool) *RPC {
-	return &RPC{stm: stm, ntf: notify}
+func NewRPC(stm *jsonrpc2.Conn, rewrite *atomic.Bool) *RPC {
+	return &RPC{stm: stm, rew: rewrite}
 }
 
 func (wc *RPC) ChatCompletionNew(rc *aiflow.RequestContext, params openai.ChatCompletionNewParams) (openai.ChatCompletionNewParams, error) {
 	const method = methodPrefix + "chat-completion-new"
-	if wc.ntf {
+	if !wc.rew.Load() {
 		_ = wc.notify(rc, method, params)
 		return params, nil
 	}

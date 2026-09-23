@@ -3,8 +3,9 @@ import { cn } from "@/lib/utils";
 import { usePathname, navigate } from "@/lib/router";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ModifLogo } from "@/components/ModifLogo";
+import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { WifiIcon, WifiOffIcon } from "lucide-react";
+import { WifiIcon, WifiOffIcon, FilePenLineIcon, BellIcon } from "lucide-react";
 
 interface NavItem {
   path: string;
@@ -12,7 +13,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: "/", label: "审计对话" },
+  { path: "/", label: "会话审计" },
   { path: "/admin", label: "管理后台" },
 ];
 
@@ -24,10 +25,14 @@ const isActive = (pathname: string, path: string) => {
 export function AppLayout({
   connected,
   onToggleConnection,
+  rewrite,
+  onToggleRewrite,
   children,
 }: {
   connected: boolean;
   onToggleConnection: () => void;
+  rewrite: boolean | null;
+  onToggleRewrite: () => void;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -42,20 +47,66 @@ export function AppLayout({
             MODIF
           </span>
         </div>
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.path}
-            onClick={() => navigate(item.path)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
-              isActive(pathname, item.path)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          const active = isActive(pathname, item.path);
+          const toggleEnabled = item.path === "/" && active;
+          return (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
+                active
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <span>{item.label}</span>
+              {item.path === "/" && rewrite !== null && (
+                <Badge
+                  variant="secondary"
+                  role={toggleEnabled ? "button" : undefined}
+                  tabIndex={toggleEnabled ? 0 : undefined}
+                  title={
+                    toggleEnabled
+                      ? rewrite
+                        ? "当前为改写模式，点击切换为通知模式"
+                        : "当前为通知模式，点击切换为改写模式"
+                      : undefined
+                  }
+                  onClick={
+                    toggleEnabled
+                      ? (e) => {
+                          e.stopPropagation();
+                          onToggleRewrite();
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    toggleEnabled
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onToggleRewrite();
+                          }
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    "h-5 px-1.5 py-0 text-[0.65rem]",
+                    toggleEnabled && "cursor-pointer",
+                    rewrite
+                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  )}
+                >
+                  {rewrite ? <FilePenLineIcon /> : <BellIcon />}
+                  {rewrite ? "改写" : "通知"}
+                </Badge>
+              )}
+            </button>
+          );
+        })}
 
         <div className="ml-auto flex items-center gap-1">
           <Tooltip>

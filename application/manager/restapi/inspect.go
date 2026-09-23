@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -10,21 +11,20 @@ import (
 	jsonrpcws "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/xmx/modif/application/aigate/aiflow"
 	"github.com/xmx/modif/application/echox"
+	"github.com/xmx/modif/application/manager/request"
+	"github.com/xmx/modif/application/manager/response"
 	"github.com/xmx/modif/application/manager/wsocket"
-	"github.com/xmx/modif/config"
 	"github.com/xmx/modif/library/jsonrpc"
 )
 
 type Inspect struct {
-	cfg config.Config
 	hub aiflow.Huber
 	wsu *websocket.Upgrader
 	log *slog.Logger
 }
 
-func NewInspect(cfg config.Config, hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *Inspect {
+func NewInspect(hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *Inspect {
 	return &Inspect{
-		cfg: cfg,
 		hub: hub,
 		wsu: wsu,
 		log: log,
@@ -33,6 +33,7 @@ func NewInspect(cfg config.Config, hub aiflow.Huber, wsu *websocket.Upgrader, lo
 
 func (ist *Inspect) RegisterHTTP(g echox.EchoRoute) error {
 	g.API.Group.GET("/inspect/attach", ist.attach)
+
 	return nil
 }
 
@@ -49,12 +50,27 @@ func (ist *Inspect) attach(c *echo.Context) error {
 	args := []any{"key", key, "real_ip", realIP}
 	ist.log.Info("有 websocket 建立连接了", args...)
 
+	rewrite := new(atomic.Bool) // 是否启用改写模式
+	mux := jsonrpc.NewMux()
+	mux.HandleFunc("modif/change-rewrite-status", func(rc *jsonrpc.RPCContext) error {
+		req := new(request.Data[bool])
+		if err1 := rc.Bind(req); err1 != nil {
+			return err1
+		}
+		rewrite.Store(req.Data)
+
+		return rc.Reply(response.NewData(rewrite.Load()))
+	})
+	mux.HandleFunc("modif/get-rewrite-status", func(rc *jsonrpc.RPCContext) error {
+		return rc.Reply(response.NewData(rewrite.Load()))
+	})
+
 	ctx := r.Context()
 	opts := jsonrpc2.SetLogger(jsonrpc.NewLogger(ist.log))
-	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, opts)
+	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), mux, opts)
 	defer conn.Close()
 
-	consume := wsocket.NewRPC(conn, ist.cfg.Notify)
+	consume := wsocket.NewRPC(conn, rewrite)
 	ist.hub.AddChatCompletion(consume)
 	ist.hub.AddResponse(consume)
 	defer func() {

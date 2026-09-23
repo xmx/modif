@@ -7,6 +7,8 @@ interface JsonRpcMessage {
   id?: string | number | null;
   method?: string;
   params?: unknown;
+  result?: unknown;
+  error?: unknown;
   meta?: { session_id?: string; client_ip?: string; request_id: string; user_agent: string; timeout_seconds?: number };
 }
 
@@ -309,7 +311,10 @@ export function useStore() {
   const [manualOff, setManualOff] = useState(false);
   const reconnectTrigger = useRef(0);
   const [auditQueue, setAuditQueue] = useState<AuditItem[]>([]);
+  const [rewrite, setRewrite] = useState<boolean | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const getRewriteIdRef = useRef(0);
+  const setRewriteIdRef = useRef(0);
 
   const pendingChunks = useRef<Map<string, ChunkUpdate>>(new Map());
   const rafPending = useRef(false);
@@ -430,6 +435,20 @@ export function useStore() {
     }
   }, [addAudit, enqueueChunk, flushChunks]);
 
+  /** 查询当前改写（rewrite）模式：发送带 id 的 JSON-RPC 请求。 */
+  const requestRewriteStatus = useCallback((ws: WebSocket) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    getRewriteIdRef.current += 1;
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: getRewriteIdRef.current, method: "modif/get-rewrite-status" }));
+  }, []);
+
+  /** 处理服务端对改写状态查询/切换的回复：result 形如 { data: boolean }。 */
+  const handleRpcResponse = useCallback((id: string | number, result: unknown) => {
+    if (id !== getRewriteIdRef.current && id !== setRewriteIdRef.current) return;
+    const v = (result ?? {}) as { data?: unknown };
+    if (typeof v.data === "boolean") setRewrite(v.data);
+  }, []);
+
   useEffect(() => {
     if (manualOff) { setConnected(false); return; }
     let stopped = false;
@@ -442,15 +461,25 @@ export function useStore() {
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${protocol}//${location.host}/api/inspect/attach`);
       wsRef.current = ws;
-      ws.onopen = () => { if (!stopped) setConnected(true); };
-      ws.onmessage = (e) => { if (!stopped) { try { handleMessage(JSON.parse(e.data)); } catch { /* */ } } };
+      ws.onopen = () => { if (!stopped) { setConnected(true); requestRewriteStatus(ws as WebSocket); } };
+      ws.onmessage = (e) => {
+        if (stopped) return;
+        let msg: JsonRpcMessage;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        if (!msg) return;
+        if (msg.method) {
+          handleMessage(msg);
+        } else if (msg.id !== undefined && msg.id !== null) {
+          handleRpcResponse(msg.id, msg.result);
+        }
+      };
       ws.onclose = (ev) => { if (!stopped) { setConnected(false); ws = null; if (!manualOff && ev.code !== 1000) reconnectTimer = setTimeout(connect, 3000); } };
       ws.onerror = () => {};
     };
 
     const timer = setTimeout(connect, 100);
     return () => { stopped = true; clearTimeout(timer); clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.onmessage = null; ws.onopen = null; ws.onerror = null; ws.close(1000); } };
-  }, [manualOff, reconnectTrigger.current, handleMessage]);
+  }, [manualOff, reconnectTrigger.current, handleMessage, requestRewriteStatus, handleRpcResponse]);
 
   const selectSession = useCallback((id: string) => { setSelectedSessionId(id); }, []);
 
@@ -478,6 +507,17 @@ export function useStore() {
     setManualOff((prev) => { if (!prev) reconnectTrigger.current++; return !prev; });
   }, []);
 
+  /** 切换改写模式：true=交互审批（可改写），false=仅通知。 */
+  const toggleRewrite = useCallback(() => {
+    const next = rewrite !== true;
+    setRewrite(next);
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      setRewriteIdRef.current += 1;
+      ws.send(JSON.stringify({ jsonrpc: "2.0", id: setRewriteIdRef.current, method: "modif/change-rewrite-status", params: { data: next } }));
+    }
+  }, [rewrite]);
+
   useEffect(() => {
     if (!selectedSessionId && state.sessions.length > 0) setSelectedSessionId(state.sessions[0].sessionId);
   }, [state.sessions, selectedSessionId]);
@@ -492,5 +532,7 @@ export function useStore() {
     resolveAudit,
     blockAudit,
     dismissAudit,
+    rewrite,
+    toggleRewrite,
   };
 }

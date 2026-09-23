@@ -12,6 +12,9 @@
     "api_key": "sk-xxx",
     "model": "xxx-text-embedding"
   },
+  "database": {
+    "uri": "mongodb://admin:password@mongodb.example.com:27017/siem?authSource=admin"
+  },
   "qdrant": {
     "host": "qdrant.example.com",
     "port": 6334,

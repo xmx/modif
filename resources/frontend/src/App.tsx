@@ -15,7 +15,12 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <AppLayout connected={store.connected} onToggleConnection={store.toggleConnection}>
+      <AppLayout
+        connected={store.connected}
+        onToggleConnection={store.toggleConnection}
+        rewrite={store.rewrite}
+        onToggleRewrite={store.toggleRewrite}
+      >
         {isAdmin ? (
           <AdminPage />
         ) : (
