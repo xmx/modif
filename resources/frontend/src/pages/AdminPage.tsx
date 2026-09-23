@@ -5,7 +5,7 @@ import { UIList } from "@/components/UIList";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { usePathname, navigate } from "@/lib/router";
-import { FileUpIcon, PaletteIcon, ListIcon } from "lucide-react";
+import { FileUpIcon, PaletteIcon, WaypointsIcon } from "lucide-react";
 
 /* ── 管理菜单定义 ────────────────────────────────────────────── */
 
@@ -14,7 +14,7 @@ type AdminSection = "ingest" | "appearance" | "routes";
 const MENU: Array<{ key: AdminSection; path: string; label: string; icon: typeof FileUpIcon }> = [
   { key: "ingest", path: "/admin/ingest", label: "文档导入", icon: FileUpIcon },
   { key: "appearance", path: "/admin/appearance", label: "界面切换", icon: PaletteIcon },
-  { key: "routes", path: "/admin/routes", label: "路由与接口", icon: ListIcon },
+  { key: "routes", path: "/admin/routes", label: "接口路由", icon: WaypointsIcon },
 ];
 
 function sectionFrom(pathname: string): AdminSection {
@@ -66,7 +66,7 @@ function AppearanceSection() {
   );
 }
 
-/* ── 路由与接口 ──────────────────────────────────────────────── */
+/* ── 接口路由 ──────────────────────────────────────────────── */
 
 interface RouteInfo {
   name: string;
@@ -101,7 +101,7 @@ function RoutesSection() {
 
   return (
     <section>
-      <SectionHeader title="路由与接口" description="后端当前注册的路由列表" />
+      <SectionHeader title="接口路由" description="后端当前注册的路由列表" />
       {error ? (
         <p className="text-sm text-destructive">加载失败：{error}</p>
       ) : routes === null ? (

@@ -32,6 +32,11 @@ func NewDocument(mdb *repository.BaseDB, qdb *qdrant.Client, ebd component.Embed
 	}
 }
 
+func (doc *Document) Get(ctx context.Context, id bson.ObjectID) (*model.Document, error) {
+	coll := doc.mdb.Document()
+	return coll.FindByID(ctx, id)
+}
+
 func (doc *Document) Page(ctx context.Context, req request.PageSize) (*repository.Pages[model.Document], error) {
 	coll := doc.mdb.Document()
 	page, size := req.PSN()

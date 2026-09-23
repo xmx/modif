@@ -22,8 +22,23 @@ func NewDocument(svc *service.Document) *Document {
 func (doc *Document) RegisterHTTP(g echox.EchoRoute) error {
 	g.API.Group.GET("/documents", doc.page)
 	g.API.Group.POST("/document/embed", doc.embed)
+	g.API.Group.GET("/document/:id", doc.get)
 	g.API.Group.DELETE("/document/:id", doc.delete)
 	return nil
+}
+
+func (doc *Document) get(c *echo.Context) error {
+	var req request.ObjectID
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	ret, err := doc.svc.Get(ctx, req.OID())
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, ret)
 }
 
 func (doc *Document) page(c *echo.Context) error {
