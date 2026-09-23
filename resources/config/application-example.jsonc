@@ -5,5 +5,27 @@
   "openai": {
     "base_url": "https://openai.example.com/v1",
     "api_key": "sk-xxx"
+  },
+  // embedding 模型
+  "embedding": {
+    "base_url": "https://openai.example.com/v1",
+    "api_key": "sk-xxx",
+    "model": "xxx-text-embedding"
+  },
+  "qdrant": {
+    "host": "qdrant.example.com",
+    "port": 6334,
+    "use_tls": true,
+    "api_key": "xxx"
+  },
+  "static": {
+    "/": [
+      {
+        "path": "resources/static/dist",
+        "name": "默认",
+        "slug": "default",
+        "spa": true
+      }
+    ]
   }
 }
