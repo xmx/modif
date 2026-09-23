@@ -5,14 +5,18 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-type Group struct {
-	Echo *echo.Echo
-	V1   EchoGroup // /v1
-	API  EchoGroup // /api
+type HTTPRegister interface {
+	RegisterHTTP(EchoRoute) error
 }
 
-func NewGroup(e *echo.Echo) Group {
-	return Group{
+type EchoRoute struct {
+	Echo *echo.Echo
+	V1   EchoGroup
+	API  EchoGroup
+}
+
+func NewEchoRoute(e *echo.Echo) EchoRoute {
+	return EchoRoute{
 		Echo: e,
 		V1:   NewEchoGroup(e, "/v1"),
 		API:  NewEchoGroup(e, "/api"),
@@ -31,12 +35,11 @@ func NewEchoGroup(e *echo.Echo, prefix string) EchoGroup {
 	}
 }
 
-func (g Group) Registers(rts gontainer.Multiple[RouteRegister]) {
+func (rg EchoRoute) Registers(rts gontainer.Multiple[HTTPRegister]) error {
 	for _, rt := range rts {
-		rt.RegisterRoute(g)
+		if err := rt.RegisterHTTP(rg); err != nil {
+			return err
+		}
 	}
-}
-
-type RouteRegister interface {
-	RegisterRoute(g Group)
+	return nil
 }

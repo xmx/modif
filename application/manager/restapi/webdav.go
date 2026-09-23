@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"net/http"
+	"path"
 	"sync/atomic"
 
 	"github.com/labstack/echo/v5"
@@ -23,9 +24,11 @@ func NewWebDAV(dir string) *WebDAV {
 	}
 }
 
-func (wd *WebDAV) RegisterRoute(g echox.Group) {
+func (wd *WebDAV) RegisterHTTP(g echox.EchoRoute) error {
 	api := g.API
-	wd.dav.Prefix = api.Prefix
+
+	const subpath = "/dav"
+	wd.dav.Prefix = path.Join(api.Prefix, subpath)
 
 	readonly := []string{
 		http.MethodOptions, http.MethodGet, http.MethodHead, "PROPFIND",
@@ -35,11 +38,13 @@ func (wd *WebDAV) RegisterRoute(g echox.Group) {
 		"LOCK", "UNLOCK", "PROPPATCH", "MKCOL", "COPY", "MOVE",
 	}
 
-	api.Group.Match(readonly, "/dav", wd.base)
-	api.Group.Match(readonly, "/dav/*", wd.base)
+	api.Group.Match(readonly, subpath, wd.base)
+	api.Group.Match(readonly, subpath+"/*", wd.base)
 
-	api.Group.Match(modified, "/dav", wd.check)
-	api.Group.Match(modified, "/dav/*", wd.check)
+	api.Group.Match(modified, subpath, wd.check)
+	api.Group.Match(modified, subpath+"/*", wd.check)
+
+	return nil
 }
 
 func (wd *WebDAV) base(c *echo.Context) error {

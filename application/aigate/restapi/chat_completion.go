@@ -20,10 +20,12 @@ func NewChatCompletion(proc *process.ChatCompletion) *ChatCompletion {
 	}
 }
 
-func (cc *ChatCompletion) RegisterRoute(g echox.Group) {
+func (cc *ChatCompletion) RegisterHTTP(g echox.EchoRoute) error {
 	v1 := g.V1.Group
 	v1.POST("/chat/completions", cc.completions)
 	v1.GET("/models", cc.models)
+
+	return nil
 }
 
 //goland:noinspection GoUnhandledErrorResult

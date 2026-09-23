@@ -1,11 +1,14 @@
 package restapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/xmx/modif/application/echox"
+	"github.com/xmx/modif/application/manager/request"
 	"github.com/xmx/modif/application/manager/response"
 	"github.com/xmx/modif/config"
 )
@@ -13,6 +16,7 @@ import (
 type Route struct {
 	uis map[string][]config.Static
 	log *slog.Logger
+	eg  echox.EchoRoute
 }
 
 func NewRoute(statics map[string][]config.Static, log *slog.Logger) *Route {
@@ -40,7 +44,9 @@ func NewRoute(statics map[string][]config.Static, log *slog.Logger) *Route {
 	}
 }
 
-func (ui *Route) RegisterRoute(g echox.Group) {
+func (ui *Route) RegisterHTTP(g echox.EchoRoute) error {
+	ui.eg = g
+
 	for k, ss := range ui.uis {
 		num := len(ss)
 		if num == 0 {
@@ -58,7 +64,18 @@ func (ui *Route) RegisterRoute(g echox.Group) {
 	}
 
 	g.API.Group.GET("/route/webui", ui.webui)
-	g.API.Group.GET("/routes", ui.routes)
+	g.API.Group.GET("/routes", ui.routesHTTP)
+
+	return nil
+}
+
+func (ui *Route) RegisterMCP(ms echox.MCPServer) error {
+	tool := &mcp.Tool{
+		Description: "获取所有路由信息",
+		Name:        "routes",
+		Title:       "获取所有路由信息",
+	}
+	return ms.AddTool(tool, ui.routesMCP)
 }
 
 func (ui *Route) serveFS(slugs map[string]config.Static, fallback config.Static) echo.HandlerFunc {
@@ -81,8 +98,18 @@ func (ui *Route) webui(c *echo.Context) error {
 	return c.JSON(http.StatusOK, ui.uis)
 }
 
-func (ui *Route) routes(c *echo.Context) error {
-	routes := c.Echo().Router().Routes()
+func (ui *Route) routesHTTP(c *echo.Context) error {
+	ret := ui.routes()
+	return c.JSON(http.StatusOK, ret)
+}
+
+func (ui *Route) routesMCP(context.Context, *mcp.CallToolRequest, request.Zero) (*mcp.CallToolResult, response.Records[response.RouteInfo], error) {
+	ret := ui.routes()
+	return nil, ret, nil
+}
+
+func (ui *Route) routes() response.Records[response.RouteInfo] {
+	routes := ui.eg.Echo.Router().Routes()
 	rts := make([]response.RouteInfo, 0, len(routes))
 	for _, inf := range routes {
 		dat := response.RouteInfo{
@@ -91,9 +118,8 @@ func (ui *Route) routes(c *echo.Context) error {
 			Path:       inf.Path,
 			Parameters: inf.Parameters,
 		}
-		inf.Reverse()
 		rts = append(rts, dat)
 	}
 
-	return c.JSON(http.StatusOK, response.NewRecords(rts))
+	return response.NewRecords(rts)
 }

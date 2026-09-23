@@ -1,41 +1,51 @@
 package restapi
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/xmx/modif/application/echox"
+	"github.com/xmx/modif/application/manager/request"
 	"github.com/xmx/modif/application/manager/response"
+	"github.com/xmx/modif/application/manager/service"
 )
 
 type Inject struct {
-	opts []gontainer.Option
+	svc *service.Inject
 }
 
-func NewInject(opts []gontainer.Option) *Inject {
+func NewInject(svc *service.Inject) *Inject {
 	return &Inject{
-		opts: opts,
+		svc: svc,
 	}
 }
 
-func (inj *Inject) RegisterRoute(g echox.Group) {
-	g.API.Group.GET("/inject/components", inj.components)
+func (jet *Inject) RegisterHTTP(g echox.EchoRoute) error {
+	g.API.Group.GET("/inject/components", jet.componentsHTTP)
+	return nil
 }
 
-func (inj *Inject) components(c *echo.Context) error {
-	ret := make([]response.InjectComponent, 0, len(inj.opts))
-	for _, opt := range inj.opts {
-
-		switch v := opt.(type) {
-		case *gontainer.Factory:
-			ele := response.InjectComponent{Name: v.Name(), Source: v.Source()}
-			ret = append(ret, ele)
-		case *gontainer.Entrypoint:
-			ele := response.InjectComponent{Name: v.Name(), Source: v.Source()}
-			ret = append(ret, ele)
-		}
+func (jet *Inject) RegisterMCP(ms echox.MCPServer) error {
+	tool := &mcp.Tool{
+		Description: "获取容器内所有组件",
+		Name:        "inject_components",
+		Title:       "获取容器内所有组件",
 	}
+	return ms.AddTool(tool, jet.componentsMCP)
+}
+
+func (jet *Inject) componentsHTTP(c *echo.Context) error {
+	val := jet.svc.Components()
+	ret := response.NewRecords(val)
 
 	return c.JSON(http.StatusOK, ret)
+}
+
+func (jet *Inject) componentsMCP(context.Context, *mcp.CallToolRequest, request.Zero) (*mcp.CallToolResult, response.Records[response.InjectComponent], error) {
+	val := jet.svc.Components()
+	ret := response.NewRecords(val)
+
+	return nil, ret, nil
 }

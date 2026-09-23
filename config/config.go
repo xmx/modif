@@ -6,9 +6,11 @@ import (
 )
 
 type Config struct {
-	Server Server              `json:"server"`
-	OpenAI OpenAI              `json:"openai"`
-	Static map[string][]Static `json:"static"`
+	Server    Server              `json:"server"`
+	OpenAI    OpenAI              `json:"openai"`
+	Qdrant    Qdrant              `json:"qdrant"`
+	Embedding Embedding           `json:"embedding"`
+	Static    map[string][]Static `json:"static"`
 }
 
 type Server struct {
@@ -18,6 +20,19 @@ type Server struct {
 type OpenAI struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
+}
+
+type Embedding struct {
+	BaseURL string `json:"base_url"`
+	APIKey  string `json:"api_key"`
+	Model   string `json:"model"`
+}
+
+type Qdrant struct {
+	Host   string `json:"host"`
+	Port   int    `json:"port"`
+	UseTLS bool   `json:"use_tls"`
+	APIKey string `json:"api_key"`
 }
 
 type Static struct {

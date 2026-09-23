@@ -16,6 +16,7 @@ import (
 	gateapi "github.com/xmx/modif/application/aigate/restapi"
 	"github.com/xmx/modif/application/echox"
 	manaapi "github.com/xmx/modif/application/manager/restapi"
+	"github.com/xmx/modif/application/manager/service"
 	"github.com/xmx/modif/component"
 	"github.com/xmx/modif/config"
 	"github.com/xmx/modif/library/netutil"
@@ -36,18 +37,26 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	e := echo.New()
 	e.HTTPErrorHandler = echox.HandleError
-	eg := echox.NewGroup(e)
+	eg := echox.NewEchoRoute(e)
+	mcpsrv := component.NewMCPServer(log)
+	mcps := echox.NewMCPServer(mcpsrv, nil, nil)
 
 	opts := []gontainer.Option{
-		gontainer.NewService(cfg),        // 配置文件
-		gontainer.NewService(cfg.Server), // 配置文件
-		gontainer.NewService(cfg.OpenAI), // 配置文件
-		gontainer.NewService(cfg.Static), // 配置文件
-		gontainer.NewService(log),        // 全局日志
+		gontainer.NewService(cfg),           // 配置文件
+		gontainer.NewService(cfg.Server),    // 配置文件
+		gontainer.NewService(cfg.OpenAI),    // 配置文件
+		gontainer.NewService(cfg.Embedding), // 配置文件
+		gontainer.NewService(cfg.Qdrant),    // 配置文件
+		gontainer.NewService(cfg.Static),    // 配置文件
+		gontainer.NewService(log),           // 全局日志
+		gontainer.NewService(mcps),          // MCP Server
 
 		gontainer.NewFactory(echox.NewWebsocketUpgrade), // Websocket Upgrade
 		gontainer.NewFactory(aiflow.NewHub),
 		gontainer.NewFactory(component.NewOpenAI),
+		gontainer.NewFactory(component.NewQdrant),
+		gontainer.NewFactory(component.NewMCPServer),
+		gontainer.NewFactory(component.NewEmbedding),
 
 		// AI Process
 		gontainer.NewFactory(process.NewChatCompletion),
@@ -59,17 +68,22 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 
 		// Manager API
 		gontainer.NewFactory(manaapi.NewInspect),
+		gontainer.NewFactory(manaapi.NewMCP),
 		gontainer.NewFactory(manaapi.NewRoute),
 		gontainer.NewService(manaapi.NewWebDAV("/")),
 
-		gontainer.NewEntrypoint(eg.Registers), // 注册路由
+		gontainer.NewEntrypoint(eg.Registers),   // 注册 HTTP 路由
+		gontainer.NewEntrypoint(mcps.Registers), // 注册 MCP 路由
 	}
 	if err := gontainer.Run(opts...); err != nil {
 		return err
 	}
 
 	// 最后管理容器组件
-	manaapi.NewInject(opts).RegisterRoute(eg)
+	injectSvc := service.NewInject(opts)
+	injectAPI := manaapi.NewInject(injectSvc)
+	_ = injectAPI.RegisterHTTP(eg)
+	_ = injectAPI.RegisterMCP(mcps)
 
 	selfTLS := tlscert.NewMatch(nil, log) // 临时自签证书
 	addr := cfg.Server.Addr

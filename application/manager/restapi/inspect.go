@@ -28,8 +28,9 @@ func NewInspect(hub aiflow.Huber, wsu *websocket.Upgrader, log *slog.Logger) *In
 	}
 }
 
-func (ist *Inspect) RegisterRoute(g echox.Group) {
+func (ist *Inspect) RegisterHTTP(g echox.EchoRoute) error {
 	g.API.Group.GET("/inspect/attach", ist.attach)
+	return nil
 }
 
 func (ist *Inspect) attach(c *echo.Context) error {
@@ -67,7 +68,7 @@ func (ist *Inspect) attach(c *echo.Context) error {
 			closed = true
 			err = jsonrpc2.ErrClosed
 		case now := <-ticker.C:
-			dead := now.Add(5 * time.Second)
+			dead := now.Add(10 * time.Second)
 			if err = ws.WriteControl(websocket.PingMessage, nil, dead); err == nil {
 				fails = 0
 			} else {

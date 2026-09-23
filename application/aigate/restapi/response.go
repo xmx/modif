@@ -18,8 +18,9 @@ func NewResponse(proc *process.Response) *Response {
 	}
 }
 
-func (rsp *Response) RegisterRoute(g echox.Group) {
+func (rsp *Response) RegisterHTTP(g echox.EchoRoute) error {
 	g.V1.Group.POST("/responses", rsp.responses)
+	return nil
 }
 
 func (rsp *Response) responses(c *echo.Context) error {

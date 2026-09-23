@@ -3,23 +3,30 @@ package process
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
+	"github.com/qdrant/go-client/qdrant"
 	"github.com/xmx/modif/application/aigate/aiflow"
+	"github.com/xmx/modif/component"
 	"github.com/xmx/modif/library/ssestream"
 )
 
 type ChatCompletion struct {
 	cli openai.Client
+	ebd component.Embedding
+	qdr *qdrant.Client
 	hub aiflow.Huber
 	log *slog.Logger
 }
 
-func NewChatCompletion(cli openai.Client, hub aiflow.Huber, log *slog.Logger) *ChatCompletion {
+func NewChatCompletion(cli openai.Client, ebd component.Embedding, qdr *qdrant.Client, hub aiflow.Huber, log *slog.Logger) *ChatCompletion {
 	return &ChatCompletion{
 		cli: cli,
+		ebd: ebd,
+		qdr: qdr,
 		hub: hub,
 		log: log,
 	}
@@ -43,6 +50,22 @@ func (cc *ChatCompletion) Completions(rc *aiflow.RequestContext, params openai.C
 	}
 
 	ctx := rc.Request.Context()
+	messages := params.Messages
+	num := len(messages)
+	last := messages[num-1]
+	if lastRole := last.GetRole(); lastRole != nil && *lastRole == "user" {
+		knowledge, _ := cc.topK(ctx, last.OfUser.Content.OfString.Value)
+		if knowledge != "" {
+			first := messages[0]
+			role := first.GetRole()
+			if role != nil && *role == "system" {
+				value := first.OfSystem.Content.OfString.Value
+				first.OfSystem.Content.OfString.Value = value + knowledge
+				params.Messages[0] = first
+			}
+		}
+	}
+
 	stm := cc.cli.Chat.Completions.NewStreaming(ctx, msg)
 	if err = stm.Err(); err != nil {
 		hook.ChatCompletionError(rc, err)
@@ -79,4 +102,46 @@ func (cc *ChatCompletion) Completions(rc *aiflow.RequestContext, params openai.C
 	hook.ChatCompletionDone(rc)
 
 	return nil
+}
+
+func (cc *ChatCompletion) topK(ctx context.Context, input string) (string, error) {
+	f32s, err := cc.ebd.Embedding(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	qry := &qdrant.QueryPoints{
+		CollectionName: "ssoc",
+		Query:          qdrant.NewQuery(f32s...),
+		Limit:          new(uint64(5)),
+		WithPayload:    qdrant.NewWithPayload(true),
+	}
+	result, err := cc.qdr.Query(ctx, qry)
+	if err != nil {
+		return "", err
+	}
+
+	knowledge := new(strings.Builder)
+	knowledge.WriteString("\n\n<knowledge>")
+	var wrote bool
+	for _, point := range result {
+		if point.Payload == nil {
+			continue
+		}
+
+		content, ok := point.Payload["content"]
+		if !ok {
+			continue
+		}
+
+		knowledge.WriteString(content.GetStringValue())
+		knowledge.WriteString("\n\n")
+		wrote = true
+	}
+	if !wrote {
+		return "", nil
+	}
+	knowledge.WriteString("</knowledge>")
+
+	return knowledge.String(), nil
 }
