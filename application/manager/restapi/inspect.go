@@ -41,6 +41,11 @@ func (ist *Inspect) attach(c *echo.Context) error {
 		return err
 	}
 
+	realIP := c.RealIP()
+	key := r.Header.Get("Sec-Websocket-Key")
+	args := []any{"key", key, "real_ip", realIP}
+	ist.log.Info("有 websocket 建立连接了", args...)
+
 	ctx := r.Context()
 	opts := jsonrpc2.SetLogger(jsonrpc.NewLogger(ist.log))
 	conn := jsonrpc2.NewConn(ctx, jsonrpcws.NewObjectStream(ws), nil, opts)
@@ -77,7 +82,8 @@ func (ist *Inspect) attach(c *echo.Context) error {
 			}
 		}
 	}
-	ist.log.Info("websocket 连接已断开", "fails", fails, "err", err)
+	args = append(args, "err", err)
+	ist.log.Info("websocket 连接已断开", args...)
 
 	return nil
 }

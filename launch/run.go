@@ -41,15 +41,25 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	mcpsrv := component.NewMCPServer(log)
 	mcps := echox.NewMCPServer(mcpsrv, nil, nil)
 
+	mdb, err := component.NewMongoDB(cfg.MongoDB, log)
+	if err != nil {
+		return err
+	}
+	if err = mdb.CreateIndex(ctx); err != nil {
+		return err
+	}
+
 	opts := []gontainer.Option{
 		gontainer.NewService(cfg),           // 配置文件
 		gontainer.NewService(cfg.Server),    // 配置文件
 		gontainer.NewService(cfg.OpenAI),    // 配置文件
 		gontainer.NewService(cfg.Embedding), // 配置文件
+		gontainer.NewService(cfg.MongoDB),   // 配置文件
 		gontainer.NewService(cfg.Qdrant),    // 配置文件
 		gontainer.NewService(cfg.Static),    // 配置文件
 		gontainer.NewService(log),           // 全局日志
 		gontainer.NewService(mcps),          // MCP Server
+		gontainer.NewService(mdb),           // MongoDB
 
 		gontainer.NewFactory(echox.NewWebsocketUpgrade), // Websocket Upgrade
 		gontainer.NewFactory(aiflow.NewHub),
@@ -66,7 +76,10 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 		gontainer.NewFactory(gateapi.NewChatCompletion),
 		gontainer.NewFactory(gateapi.NewResponse),
 
+		gontainer.NewFactory(service.NewDocument),
+
 		// Manager API
+		gontainer.NewFactory(manaapi.NewDocument),
 		gontainer.NewFactory(manaapi.NewInspect),
 		gontainer.NewFactory(manaapi.NewMCP),
 		gontainer.NewFactory(manaapi.NewRoute),
@@ -75,11 +88,12 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 		gontainer.NewEntrypoint(eg.Registers),   // 注册 HTTP 路由
 		gontainer.NewEntrypoint(mcps.Registers), // 注册 MCP 路由
 	}
-	if err := gontainer.Run(opts...); err != nil {
+	if err = gontainer.Run(opts...); err != nil {
 		return err
 	}
 
 	// 最后管理容器组件
+
 	injectSvc := service.NewInject(opts)
 	injectAPI := manaapi.NewInject(injectSvc)
 	_ = injectAPI.RegisterHTTP(eg)
@@ -97,7 +111,6 @@ func Exec(ctx context.Context, cfg *config.Config) error {
 	openURL := &url.URL{Scheme: "http", Host: accessAddr}
 	log.Info("访问地址", "url", openURL.String())
 
-	var err error
 	errch := make(chan error)
 	go serveHTTP(errch, srv, false, log)
 	defer shutdownHTTP(ctx, srv, 5*time.Second)

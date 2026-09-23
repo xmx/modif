@@ -9,6 +9,7 @@ type Config struct {
 	Server    Server              `json:"server"`
 	OpenAI    OpenAI              `json:"openai"`
 	Qdrant    Qdrant              `json:"qdrant"`
+	MongoDB   MongoDB             `json:"mongodb"`
 	Embedding Embedding           `json:"embedding"`
 	Static    map[string][]Static `json:"static"`
 }
@@ -26,6 +27,10 @@ type Embedding struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
 	Model   string `json:"model"`
+}
+
+type MongoDB struct {
+	URI string `json:"uri"`
 }
 
 type Qdrant struct {

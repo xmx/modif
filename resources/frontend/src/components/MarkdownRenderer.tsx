@@ -99,7 +99,7 @@ const CodeBlock = memo(function CodeBlock({
           className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title="复制代码"
         >
-          {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+          {copied ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
         </button>
       </div>
       <pre className="overflow-x-auto bg-[#282c34] p-4">{children}</pre>

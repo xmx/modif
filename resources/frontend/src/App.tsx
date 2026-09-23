@@ -1,33 +1,43 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useStore } from "@/hooks/useStore";
+import { usePathname } from "@/lib/router";
+import { AppLayout } from "@/components/AppLayout";
 import { Sidebar } from "@/components/Sidebar";
 import { ConversationView } from "@/components/ConversationView";
 import { AuditPanel } from "@/components/AuditPanel";
+import { AdminPage } from "@/pages/AdminPage";
 
 export default function App() {
   const store = useStore();
+  const pathname = usePathname();
+
+  const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen bg-background">
-        <Sidebar
-          sessions={store.sessions}
-          selectedSessionId={store.selectedSessionId}
-          connected={store.connected}
-          onSelectSession={store.selectSession}
-          onToggleConnection={store.toggleConnection}
-        />
-        <ConversationView
-          sessions={store.sessions}
-          selectedSessionId={store.selectedSessionId}
-        />
-        <AuditPanel
-          items={store.auditQueue}
-          onResolve={store.resolveAudit}
-          onBlock={store.blockAudit}
-          onDismiss={store.dismissAudit}
-        />
-      </div>
+      <AppLayout connected={store.connected} onToggleConnection={store.toggleConnection}>
+        {isAdmin ? (
+          <AdminPage />
+        ) : (
+          <div className="flex h-full">
+            <Sidebar
+              sessions={store.sessions}
+              selectedSessionId={store.selectedSessionId}
+              onSelectSession={store.selectSession}
+            />
+            <ConversationView
+              sessions={store.sessions}
+              selectedSessionId={store.selectedSessionId}
+            />
+            <AuditPanel
+              items={store.auditQueue}
+              onResolve={store.resolveAudit}
+              onBlock={store.blockAudit}
+              onDismiss={store.dismissAudit}
+            />
+          </div>
+        )}
+      </AppLayout>
     </TooltipProvider>
   );
 }
