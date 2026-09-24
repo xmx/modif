@@ -5,7 +5,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { ModifLogo } from "@/components/ModifLogo";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { WifiIcon, WifiOffIcon, FilePenLineIcon, BellIcon } from "lucide-react";
+import { WifiIcon, WifiOffIcon, FilePenLineIcon, BellIcon, LogOutIcon } from "lucide-react";
+import { expireAuth } from "@/lib/auth";
 
 interface NavItem {
   path: string;
@@ -62,48 +63,58 @@ export function AppLayout({
               )}
             >
               <span>{item.label}</span>
-              {item.path === "/" && rewrite !== null && (
-                <Badge
-                  variant="secondary"
-                  role={toggleEnabled ? "button" : undefined}
-                  tabIndex={toggleEnabled ? 0 : undefined}
-                  title={
-                    toggleEnabled
-                      ? rewrite
-                        ? "当前为改写模式，点击切换为通知模式"
-                        : "当前为通知模式，点击切换为改写模式"
-                      : undefined
-                  }
-                  onClick={
-                    toggleEnabled
-                      ? (e) => {
-                          e.stopPropagation();
-                          onToggleRewrite();
-                        }
-                      : undefined
-                  }
-                  onKeyDown={
-                    toggleEnabled
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
+              {item.path === "/" &&
+                (!connected ? (
+                  <Badge
+                    variant="destructive"
+                    title="WebSocket 已断开，无法切换模式"
+                    className="h-5 px-1.5 py-0 text-[0.65rem]"
+                  >
+                    <WifiOffIcon />
+                    离线
+                  </Badge>
+                ) : rewrite !== null ? (
+                  <Badge
+                    variant="secondary"
+                    role={toggleEnabled ? "button" : undefined}
+                    tabIndex={toggleEnabled ? 0 : undefined}
+                    title={
+                      toggleEnabled
+                        ? rewrite
+                          ? "当前为改写模式，点击切换为通知模式"
+                          : "当前为通知模式，点击切换为改写模式"
+                        : undefined
+                    }
+                    onClick={
+                      toggleEnabled
+                        ? (e) => {
+                            e.stopPropagation();
                             onToggleRewrite();
                           }
-                        }
-                      : undefined
-                  }
-                  className={cn(
-                    "h-5 px-1.5 py-0 text-[0.65rem]",
-                    toggleEnabled && "cursor-pointer",
-                    rewrite
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  )}
-                >
-                  {rewrite ? <FilePenLineIcon /> : <BellIcon />}
-                  {rewrite ? "改写" : "通知"}
-                </Badge>
-              )}
+                        : undefined
+                    }
+                    onKeyDown={
+                      toggleEnabled
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onToggleRewrite();
+                            }
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      "h-5 px-1.5 py-0 text-[0.65rem]",
+                      toggleEnabled && "cursor-pointer",
+                      rewrite
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    )}
+                  >
+                    {rewrite ? <FilePenLineIcon /> : <BellIcon />}
+                    {rewrite ? "改写" : "通知"}
+                  </Badge>
+                ) : null)}
             </button>
           );
         })}
@@ -127,6 +138,19 @@ export function AppLayout({
             </TooltipContent>
           </Tooltip>
           <ThemeToggle />
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                onClick={expireAuth}
+                aria-label="退出登录"
+                className="inline-flex size-8 cursor-pointer shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LogOutIcon className="size-[1.1rem]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">退出登录</TooltipContent>
+          </Tooltip>
         </div>
       </header>
 

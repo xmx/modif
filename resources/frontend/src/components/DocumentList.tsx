@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileTextIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch, problemMessage } from "@/lib/problem";
+import { useToast } from "@/components/ui/toast";
 import {
   Pagination,
   PaginationContent,
@@ -138,28 +140,26 @@ function ConfirmDelete({ doc, deleting, onDelete }: {
 
 /** 已导入文档列表：通过 GET /api/documents 分页拉取，支持删除与翻页。 */
 export function DocumentList({ refreshKey }: { refreshKey: number }) {
+  const { toast } = useToast();
   const [data, setData] = useState<DocumentsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
 
   const load = useCallback(() => {
     setLoading(true);
     const qs = new URLSearchParams({ page: String(page), size: String(size) });
-    fetch(`/api/documents?${qs.toString()}`)
-      .then((r) => (r.ok ? (r.json() as Promise<DocumentsResponse>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+    apiFetch(`/api/documents?${qs.toString()}`)
+      .then((r) => r.json() as Promise<DocumentsResponse>)
       .then((res) => {
         setData(res);
         // 后端会把越界页码修正为最后一页，同步回本地
         if (res.page !== page) setPage(res.page);
-        setError(null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"))
+      .catch((e) => toast({ ...problemMessage(e), variant: "error" }))
       .finally(() => setLoading(false));
-  }, [page, size]);
+  }, [page, size, toast]);
 
   useEffect(() => {
     load();
@@ -167,17 +167,13 @@ export function DocumentList({ refreshKey }: { refreshKey: number }) {
 
   const remove = async (doc: DocumentItem) => {
     setDeletingId(doc.id);
-    setDeleteError(null);
     try {
-      const resp = await fetch(`/api/document/${encodeURIComponent(doc.id)}`, {
+      await apiFetch(`/api/document/${encodeURIComponent(doc.id)}`, {
         method: "DELETE",
       });
-      if (!resp.ok) {
-        throw new Error(`删除失败（HTTP ${resp.status}）`);
-      }
       await load();
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : "删除失败");
+      toast({ ...problemMessage(e), variant: "error" });
     } finally {
       setDeletingId(null);
     }
@@ -208,13 +204,7 @@ export function DocumentList({ refreshKey }: { refreshKey: number }) {
         </button>
       </div>
 
-      {deleteError && (
-        <p className="text-sm text-destructive">{deleteError}</p>
-      )}
-
-      {error ? (
-        <p className="text-sm text-destructive">加载失败：{error}</p>
-      ) : loading && data === null ? (
+      {loading && data === null ? (
         <p className="text-sm text-muted-foreground">加载中…</p>
       ) : records.length === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">

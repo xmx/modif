@@ -4,6 +4,8 @@ import { DocumentList } from "@/components/DocumentList";
 import { UIList } from "@/components/UIList";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { apiFetch, problemMessage } from "@/lib/problem";
+import { useToast } from "@/components/ui/toast";
 import { usePathname, navigate } from "@/lib/router";
 import { FileUpIcon, PaletteIcon, WaypointsIcon } from "lucide-react";
 
@@ -90,21 +92,19 @@ const METHOD_STYLES: Record<string, string> = {
 
 function RoutesSection() {
   const [routes, setRoutes] = useState<RouteInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    fetch("/api/routes")
-      .then((r) => (r.ok ? (r.json() as Promise<RoutesResponse>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+    apiFetch("/api/routes")
+      .then((r) => r.json() as Promise<RoutesResponse>)
       .then((data) => setRoutes(data.records ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"));
-  }, []);
+      .catch((e) => toast({ ...problemMessage(e), variant: "error" }));
+  }, [toast]);
 
   return (
     <section>
       <SectionHeader title="接口路由" description="后端当前注册的路由列表" />
-      {error ? (
-        <p className="text-sm text-destructive">加载失败：{error}</p>
-      ) : routes === null ? (
+      {routes === null ? (
         <p className="text-sm text-muted-foreground">加载中…</p>
       ) : routes.length === 0 ? (
         <p className="text-sm text-muted-foreground">暂无路由</p>

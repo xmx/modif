@@ -13,6 +13,7 @@ import (
 	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
 	"github.com/xmx/modif/application/aigate/aiflow"
+	gatemid "github.com/xmx/modif/application/aigate/middle"
 	"github.com/xmx/modif/application/aigate/process"
 	gateapi "github.com/xmx/modif/application/aigate/restapi"
 	"github.com/xmx/modif/application/echox"
@@ -63,14 +64,17 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewService(mdb),           // MongoDB
 		gontainer.NewService(e),
 
-		gontainer.NewFactory(func(e *echo.Echo) echox.EchoRoute {
-			tok := uuid.New().String()
-			log.Info("访问密钥", "token", tok)
+		gontainer.NewFactory(func(e *echo.Echo, cfg config.Config) echox.EchoRoute {
+			key := cfg.WebKey
+			if key == "" {
+				key = uuid.New().String()
+			}
+			log.Info("访问密钥", "token", key)
 
 			return echox.EchoRoute{
 				Echo: e,
-				V1:   echox.NewEchoGroup(e, "/v1"),
-				API:  echox.NewEchoGroup(e, "/api", middle.NewAuth(tok)),
+				V1:   echox.NewEchoGroup(e, "/v1", gatemid.NewAuth(cfg.AIKeys)),
+				API:  echox.NewEchoGroup(e, "/api", middle.NewAuth(key)),
 			}
 		}),
 

@@ -7,6 +7,8 @@ import {
   CheckCircle2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch, problemMessage } from "@/lib/problem";
+import { useToast } from "@/components/ui/toast";
 
 /** 允许上传的文本文档扩展名。 */
 const ALLOWED_EXTENSIONS = new Set([
@@ -92,18 +94,6 @@ const STATUS_TEXT: Record<FileStatus, string> = {
   error: "失败",
 };
 
-/** 尝试从后端的 Problem Details / JSON 响应中提取可读的错误信息。 */
-async function readErrorDetail(resp: Response): Promise<string> {
-  try {
-    const data = (await resp.json()) as { detail?: string; message?: string };
-    if (typeof data?.detail === "string" && data.detail) return data.detail;
-    if (typeof data?.message === "string" && data.message) return data.message;
-  } catch {
-    /* 非 JSON 响应，忽略 */
-  }
-  return `HTTP ${resp.status}`;
-}
-
 interface IngestUploadProps {
   onUploaded?: () => void;
 }
@@ -111,6 +101,7 @@ interface IngestUploadProps {
 /** 文本文档导入区域：支持多选/多文件拖拽，逐个上传并标识每个文件的成功/失败。 */
 export function IngestUpload({ onUploaded }: IngestUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
   const [dragging, setDragging] = useState(false);
   const [tasks, setTasks] = useState<FileTask[]>([]);
 
@@ -141,21 +132,20 @@ export function IngestUpload({ onUploaded }: IngestUploadProps) {
     patchTask(task.id, { status: "uploading" });
     try {
       const text = await task.file.text();
-      const resp = await fetch("/api/document/embed", {
+      await apiFetch("/api/document/embed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: task.file.name, content: text }),
       });
-      if (!resp.ok) {
-        throw new Error(await readErrorDetail(resp));
-      }
       patchTask(task.id, { status: "success" });
       return true;
     } catch (e) {
+      const msg = problemMessage(e);
       patchTask(task.id, {
         status: "error",
-        message: e instanceof Error ? e.message : "上传失败",
+        message: msg.detail ? `${msg.title}：${msg.detail}` : msg.title,
       });
+      toast({ ...msg, variant: "error" });
       return false;
     }
   };

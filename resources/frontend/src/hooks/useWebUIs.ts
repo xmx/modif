@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { apiFetch, problemMessage } from "@/lib/problem";
+import { useToast } from "@/components/ui/toast";
 
 export interface WebUIEntry {
   path: string;
@@ -18,11 +20,12 @@ function readCookie(name: string): string | null {
 export function useWebUIs() {
   const [entries, setEntries] = useState<WebUIEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/route/webui")
-      .then((r) => (r.ok ? (r.json() as Promise<WebUIResponse>) : null))
+    apiFetch("/api/route/webui")
+      .then((r) => r.json() as Promise<WebUIResponse>)
       .then((data) => {
         if (cancelled || !data) return;
         const flat: WebUIEntry[] = [];
@@ -37,14 +40,16 @@ export function useWebUIs() {
         }
         setEntries(flat);
       })
-      .catch(() => {})
+      .catch((e) => {
+        if (!cancelled) toast({ ...problemMessage(e), variant: "error" });
+      })
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [toast]);
 
   const activeSlug = readCookie("ui") || entries[0]?.slug || null;
 

@@ -6,7 +6,8 @@ import (
 )
 
 type Config struct {
-	Notify    bool                `json:"notify"`
+	WebKey    string              `json:"web_key"`
+	AIKeys    []string            `json:"ai_keys"`
 	Server    Server              `json:"server"`
 	OpenAI    OpenAI              `json:"openai"`
 	Qdrant    Qdrant              `json:"qdrant"`

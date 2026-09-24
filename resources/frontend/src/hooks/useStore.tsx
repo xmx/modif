@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
+import { useAuthToken } from "@/lib/auth";
+
 // ── Types ───────────────────────────────────────────────────────
 
 interface JsonRpcMessage {
@@ -9,7 +11,9 @@ interface JsonRpcMessage {
   params?: unknown;
   result?: unknown;
   error?: unknown;
-  meta?: { session_id?: string; client_ip?: string; request_id: string; user_agent: string; timeout_seconds?: number };
+  meta?: { session_id?: string; client_ip?: string; request_id: string };
+  header?: Record<string, string | string[] | undefined>;
+  timeout_seconds?: number;
 }
 
 export interface AuditItem {
@@ -20,7 +24,7 @@ export interface AuditItem {
   model: string;
   userMessage: string | null;
   paramsRaw: string;
-  /** 后端在 meta.timeout_seconds 标识的超时时间（秒），超时后自动关闭审批窗口 */
+  /** 后端在消息外层 timeout_seconds 标识的超时时间（秒），超时后自动关闭审批窗口 */
   timeoutSeconds: number | null;
 }
 
@@ -312,6 +316,7 @@ export function useStore() {
   const reconnectTrigger = useRef(0);
   const [auditQueue, setAuditQueue] = useState<AuditItem[]>([]);
   const [rewrite, setRewrite] = useState<boolean | null>(null);
+  const token = useAuthToken();
   const wsRef = useRef<WebSocket | null>(null);
   const getRewriteIdRef = useRef(0);
   const setRewriteIdRef = useRef(0);
@@ -350,8 +355,8 @@ export function useStore() {
   const addAudit = useCallback((msg: JsonRpcMessage, rid: string, sid: string, userAgent: string, model: string, userMessage: string | null, params: unknown) => {
     if (msg.id === undefined || msg.id === null) return;
     const timeoutSeconds =
-      typeof msg.meta?.timeout_seconds === "number" && msg.meta.timeout_seconds > 0
-        ? msg.meta.timeout_seconds
+      typeof msg.timeout_seconds === "number" && msg.timeout_seconds > 0
+        ? msg.timeout_seconds
         : null;
     setAuditQueue((q) => [
       ...q,
@@ -376,7 +381,10 @@ export function useStore() {
     // 兜底规则：session_id > client_ip > request_id。
     const sid = meta.session_id || meta.client_ip || rid;
     const clientIP = meta.client_ip || "Unknown IP";
-    const userAgent = meta.user_agent || "Unknown";
+    const userAgentHeader = msg.header?.["User-Agent"] ?? msg.header?.["user-agent"];
+    const userAgent = Array.isArray(userAgentHeader)
+      ? userAgentHeader[0] || "Unknown"
+      : userAgentHeader || "Unknown";
 
     switch (msg.method) {
       case "modif/chat-completion-new": {
@@ -450,7 +458,7 @@ export function useStore() {
   }, []);
 
   useEffect(() => {
-    if (manualOff) { setConnected(false); return; }
+    if (manualOff || !token.trim()) { setConnected(false); return; }
     let stopped = false;
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let ws: WebSocket | null = null;
@@ -459,7 +467,7 @@ export function useStore() {
       if (stopped || manualOff) return;
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${protocol}//${location.host}/api/inspect/attach`);
+      ws = new WebSocket(`${protocol}//${location.host}/api/inspect/attach?authorization=${encodeURIComponent(token)}`);
       wsRef.current = ws;
       ws.onopen = () => { if (!stopped) { setConnected(true); requestRewriteStatus(ws as WebSocket); } };
       ws.onmessage = (e) => {
@@ -479,7 +487,7 @@ export function useStore() {
 
     const timer = setTimeout(connect, 100);
     return () => { stopped = true; clearTimeout(timer); clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.onmessage = null; ws.onopen = null; ws.onerror = null; ws.close(1000); } };
-  }, [manualOff, reconnectTrigger.current, handleMessage, requestRewriteStatus, handleRpcResponse]);
+  }, [manualOff, token, reconnectTrigger.current, handleMessage, requestRewriteStatus, handleRpcResponse]);
 
   const selectSession = useCallback((id: string) => { setSelectedSessionId(id); }, []);
 
@@ -509,14 +517,13 @@ export function useStore() {
 
   /** 切换改写模式：true=交互审批（可改写），false=仅通知。 */
   const toggleRewrite = useCallback(() => {
+    const ws = wsRef.current;
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     const next = rewrite !== true;
     setRewrite(next);
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      setRewriteIdRef.current += 1;
-      ws.send(JSON.stringify({ jsonrpc: "2.0", id: setRewriteIdRef.current, method: "modif/change-rewrite-status", params: { data: next } }));
-    }
-  }, [rewrite]);
+    setRewriteIdRef.current += 1;
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: setRewriteIdRef.current, method: "modif/change-rewrite-status", params: { data: next } }));
+  }, [connected, rewrite]);
 
   useEffect(() => {
     if (!selectedSessionId && state.sessions.length > 0) setSelectedSessionId(state.sessions[0].sessionId);

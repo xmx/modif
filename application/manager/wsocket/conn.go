@@ -106,7 +106,7 @@ func (wc *RPC) notifyError(rc *aiflow.RequestContext, err error, method string) 
 func (wc *RPC) notify(rc *aiflow.RequestContext, method string, params any) error {
 	r := rc.Request
 	parent := r.Context()
-	opts := wc.callOptions(rc, 0)
+	opts := wc.callOptions(rc)
 
 	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
@@ -115,9 +115,11 @@ func (wc *RPC) notify(rc *aiflow.RequestContext, method string, params any) erro
 }
 
 func (wc *RPC) call(rc *aiflow.RequestContext, method string, params, result any) error {
-	timeout := 10 * time.Second
-	opts := wc.callOptions(rc, timeout)
 	parent := rc.Request.Context()
+
+	timeout := 10 * time.Second
+	opts := wc.callOptions(rc)
+	opts = append(opts, jsonrpc2.ExtraField("timeout_seconds", int(timeout.Seconds())))
 
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -139,7 +141,7 @@ func (wc *RPC) isSkipError(err error) bool {
 	return false
 }
 
-func (wc *RPC) callOptions(rc *aiflow.RequestContext, timeout time.Duration) []jsonrpc2.CallOption {
+func (wc *RPC) callOptions(rc *aiflow.RequestContext) []jsonrpc2.CallOption {
 	r := rc.Request
 	header := r.Header.Clone()
 	header.Del("Authorization")
@@ -147,8 +149,8 @@ func (wc *RPC) callOptions(rc *aiflow.RequestContext, timeout time.Duration) []j
 	// 已知不会带 Session ID 的 Agent：
 	// cline
 	headers := []string{
-		"X-Session-Id",       // opencode/kilo
-		"X-Session-Affinity", // opencode/kilo
+		"X-Session-Id",       // opencode, kilo
+		"X-Session-Affinity", // opencode, kilo
 		"Agent-Session-Id",   // goose
 		"X-Conversation-Id",  // Tencent Cloud CodeBuddy
 		"session-id",         // codex
@@ -165,10 +167,6 @@ func (wc *RPC) callOptions(rc *aiflow.RequestContext, timeout time.Duration) []j
 		ClientIP:  rc.ClientIP,
 		SessionID: sessionID,
 		RequestID: rc.RequestID,
-		UserAgent: rc.Request.UserAgent(),
-	}
-	if num := int(timeout.Seconds()); num > 0 {
-		meta.TimeoutSeconds = num
 	}
 
 	return []jsonrpc2.CallOption{
