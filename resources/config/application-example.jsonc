@@ -12,7 +12,7 @@
     "api_key": "sk-xxx",
     "model": "xxx-text-embedding"
   },
-  "database": {
+  "mongodb": {
     "uri": "mongodb://admin:password@mongodb.example.com:27017/siem?authSource=admin"
   },
   "qdrant": {

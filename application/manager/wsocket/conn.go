@@ -104,29 +104,46 @@ func (wc *RPC) notifyError(rc *aiflow.RequestContext, err error, method string) 
 }
 
 func (wc *RPC) notify(rc *aiflow.RequestContext, method string, params any) error {
-	meta := wc.extractMetadata(rc)
-	parent := rc.Request.Context()
+	r := rc.Request
+	parent := r.Context()
+	opts := wc.callOptions(rc, 0)
 
 	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
 
-	return wc.stm.Notify(ctx, method, params, jsonrpc2.Meta(meta))
+	return wc.stm.Notify(ctx, method, params, opts...)
 }
 
 func (wc *RPC) call(rc *aiflow.RequestContext, method string, params, result any) error {
-	meta := wc.extractMetadata(rc)
-	parent := rc.Request.Context()
-
 	timeout := 10 * time.Second
-	meta.TimeoutSeconds = int(timeout.Seconds())
+	opts := wc.callOptions(rc, timeout)
+	parent := rc.Request.Context()
 
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	return wc.stm.Call(ctx, method, params, result, jsonrpc2.Meta(meta))
+	return wc.stm.Call(ctx, method, params, result, opts...)
 }
 
-func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
+func (wc *RPC) isSkipError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, jsonrpc2.ErrClosed) {
+		return true
+	}
+	if neterr, ok := err.(net.Error); ok {
+		return neterr.Timeout()
+	}
+
+	return false
+}
+
+func (wc *RPC) callOptions(rc *aiflow.RequestContext, timeout time.Duration) []jsonrpc2.CallOption {
+	r := rc.Request
+	header := r.Header.Clone()
+	header.Del("Authorization")
+
 	// 已知不会带 Session ID 的 Agent：
 	// cline
 	headers := []string{
@@ -144,24 +161,19 @@ func (wc *RPC) extractMetadata(rc *aiflow.RequestContext) *Metadata {
 		}
 	}
 
-	return &Metadata{
+	meta := &Metadata{
 		ClientIP:  rc.ClientIP,
 		SessionID: sessionID,
 		RequestID: rc.RequestID,
 		UserAgent: rc.Request.UserAgent(),
 	}
-}
-
-func (wc *RPC) isSkipError(err error) bool {
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, jsonrpc2.ErrClosed) {
-		return true
-	}
-	if neterr, ok := err.(net.Error); ok {
-		return neterr.Timeout()
+	if num := int(timeout.Seconds()); num > 0 {
+		meta.TimeoutSeconds = num
 	}
 
-	return false
+	return []jsonrpc2.CallOption{
+		jsonrpc2.ExtraField("header", header),
+		jsonrpc2.ExtraField("remote_addr", r.RemoteAddr),
+		jsonrpc2.Meta(meta),
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"time"
+	"uuid"
 
 	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/xmx/modif/application/aigate/process"
 	gateapi "github.com/xmx/modif/application/aigate/restapi"
 	"github.com/xmx/modif/application/echox"
+	"github.com/xmx/modif/application/manager/middle"
 	manaapi "github.com/xmx/modif/application/manager/restapi"
 	"github.com/xmx/modif/application/manager/service"
 	"github.com/xmx/modif/component"
@@ -37,7 +39,6 @@ func Exec(ctx context.Context, cfg config.Config) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	e := echo.New()
 	e.HTTPErrorHandler = echox.HandleError
-	eg := echox.NewEchoRoute(e)
 	mcpsrv := component.NewMCPServer(log)
 	mcps := echox.NewMCPServer(mcpsrv, nil, nil)
 
@@ -60,6 +61,18 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewService(log),           // 全局日志
 		gontainer.NewService(mcps),          // MCP Server
 		gontainer.NewService(mdb),           // MongoDB
+		gontainer.NewService(e),
+
+		gontainer.NewFactory(func(e *echo.Echo) echox.EchoRoute {
+			tok := uuid.New().String()
+			log.Info("访问密钥", "token", tok)
+
+			return echox.EchoRoute{
+				Echo: e,
+				V1:   echox.NewEchoGroup(e, "/v1"),
+				API:  echox.NewEchoGroup(e, "/api", middle.NewAuth(tok)),
+			}
+		}),
 
 		gontainer.NewFactory(echox.NewWebsocketUpgrade), // Websocket Upgrade
 		gontainer.NewFactory(aiflow.NewHub),
@@ -85,19 +98,12 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewFactory(manaapi.NewRoute),
 		gontainer.NewService(manaapi.NewWebDAV("/")),
 
-		gontainer.NewEntrypoint(eg.Registers),   // 注册 HTTP 路由
 		gontainer.NewEntrypoint(mcps.Registers), // 注册 MCP 路由
+		gontainer.NewEntrypoint(component.EchoHTTPRegister),
 	}
 	if err = gontainer.Run(opts...); err != nil {
 		return err
 	}
-
-	// 最后管理容器组件
-
-	injectSvc := service.NewInject(opts)
-	injectAPI := manaapi.NewInject(injectSvc)
-	_ = injectAPI.RegisterHTTP(eg)
-	_ = injectAPI.RegisterMCP(mcps)
 
 	selfTLS := tlscert.NewMatch(nil, log) // 临时自签证书
 	addr := cfg.Server.Addr

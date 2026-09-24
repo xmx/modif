@@ -1,7 +1,6 @@
 package echox
 
 import (
-	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
 )
 
@@ -28,18 +27,9 @@ type EchoGroup struct {
 	Group  *echo.Group
 }
 
-func NewEchoGroup(e *echo.Echo, prefix string) EchoGroup {
+func NewEchoGroup(e *echo.Echo, prefix string, m ...echo.MiddlewareFunc) EchoGroup {
 	return EchoGroup{
 		Prefix: prefix,
-		Group:  e.Group(prefix),
+		Group:  e.Group(prefix, m...),
 	}
-}
-
-func (rg EchoRoute) Registers(rts gontainer.Multiple[HTTPRegister]) error {
-	for _, rt := range rts {
-		if err := rt.RegisterHTTP(rg); err != nil {
-			return err
-		}
-	}
-	return nil
 }
