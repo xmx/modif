@@ -23,10 +23,22 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
-      - name: Build
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: resources/frontend/package-lock.json
+
+      - name: Build Backend
         run: |
           chmod +x ./build.sh
           ./build.sh
+
+      - name: Build Frontend
+        working-directory: resources/frontend
+        run: |
+          npm ci
+          npm run build
 
       - name: Set artifact name
         id: artifact
@@ -37,6 +49,6 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: |
-            aegis-server_*
+            modif-*
             resources/static
             VERSION
