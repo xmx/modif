@@ -24,7 +24,7 @@ jobs:
           check-latest: true
 
       - name: Build
-        run: sh build.sh
+        run: ./build.sh
 
       - name: Set artifact name
         id: artifact
