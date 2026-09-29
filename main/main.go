@@ -9,14 +9,19 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/xmx/modif/bininfo"
 	"github.com/xmx/modif/launch"
 )
 
 func main() {
 	set := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	cfg := set.String("c", "resources/config/application.jsonc", "配置文件")
-	// 	ver := set.Bool("v", false, "打印版本")
+	ver := set.Bool("v", false, "打印版本")
 	_ = set.Parse(os.Args[1:])
+
+	if _, _ = bininfo.ANSI(os.Stdout); *ver {
+		return
+	}
 
 	// 设置崩溃信息输出位置。
 	for _, name := range []string{"resources/.crash.txt", ".crash.txt"} {

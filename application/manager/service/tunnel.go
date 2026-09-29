@@ -4,14 +4,19 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/xmx/modif/application/manager/response"
 	"github.com/xmx/modif/application/manager/wsocket"
 )
 
 type Tunnel struct {
 	log *slog.Logger
+	gid atomic.Int64
+	mtx sync.RWMutex
+	hub map[*response.TunnelInfo]struct{}
 }
 
 func NewTunnel(log *slog.Logger) *Tunnel {
@@ -24,6 +29,7 @@ func (tun *Tunnel) Connect(cli *websocket.Conn, addr string) error {
 	//goland:noinspection GoUnhandledErrorResult
 	defer cli.Close()
 
+	now := time.Now()
 	clientAddr, ingressAddr := cli.RemoteAddr(), cli.LocalAddr()
 	args := []any{
 		"raw_address", addr,
@@ -47,11 +53,21 @@ func (tun *Tunnel) Connect(cli *websocket.Conn, addr string) error {
 	//goland:noinspection GoUnhandledErrorResult
 	defer srv.Close()
 
+	info := &response.TunnelInfo{
+		ID:            tun.gid.Add(1),
+		Address:       addr,
+		Source:        cli,
+		Destination:   srv,
+		EstablishedAt: now,
+	}
+	tun.putHub(info)
+	defer tun.delHub(info)
+
 	// client --[write to]--> server
 	var ctoscnt int64
 	var ctoserr error
 
-	wg := new(sync.WaitGroup)
+	var wg sync.WaitGroup
 	wg.Go(func() {
 		ctoscnt, ctoserr = wsocket.WriteToConn(srv, cli)
 		_ = srv.Close() // 任何一个方向结束，都要关闭另一端。
@@ -70,4 +86,33 @@ func (tun *Tunnel) Connect(cli *websocket.Conn, addr string) error {
 	tun.log.Info("代理断开连接", args...)
 
 	return nil
+}
+
+func (tun *Tunnel) List() response.TunnelInfos {
+	tun.mtx.RLock()
+	defer tun.mtx.RUnlock()
+
+	ret := make(response.TunnelInfos, 0, len(tun.hub))
+	for info := range tun.hub {
+		ret = append(ret, info)
+	}
+
+	return ret
+}
+
+func (tun *Tunnel) putHub(info *response.TunnelInfo) {
+	tun.mtx.Lock()
+	defer tun.mtx.Unlock()
+
+	if tun.hub == nil {
+		tun.hub = make(map[*response.TunnelInfo]struct{}, 8)
+	}
+	tun.hub[info] = struct{}{}
+}
+
+func (tun *Tunnel) delHub(info *response.TunnelInfo) {
+	tun.mtx.Lock()
+	defer tun.mtx.Unlock()
+
+	delete(tun.hub, info)
 }

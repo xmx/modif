@@ -43,8 +43,14 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		Level:      slog.LevelDebug,
 		TimeFormat: time.RFC3339,
 	}))
-	e := echo.New()
-	e.HTTPErrorHandler = echox.HandleError
+
+	ecfg := echo.Config{
+		Logger:                       log,
+		HTTPErrorHandler:             echox.HandleError,
+		NoGroupAutoRegister404Routes: true,
+	}
+	e := echo.NewWithConfig(ecfg)
+
 	mcpsrv := component.NewMCPServer(log)
 	mcps := echox.NewMCPServer(mcpsrv, nil, nil)
 
@@ -67,7 +73,7 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewService(log),           // 全局日志
 		gontainer.NewService(mcps),          // MCP Server
 		gontainer.NewService(mdb),           // MongoDB
-		gontainer.NewService(e),
+		gontainer.NewService(e),             // Echo
 
 		gontainer.NewFactory(func(e *echo.Echo, cfg config.Config) echox.EchoRoute {
 			key := cfg.WebKey

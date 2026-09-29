@@ -2,12 +2,11 @@ package wsocket
 
 import (
 	"io"
-	"net"
 
 	"github.com/gorilla/websocket"
 )
 
-func WriteToWebsocket(dst *websocket.Conn, src net.Conn) (int64, error) {
+func WriteToWebsocket(dst *websocket.Conn, src io.Reader) (int64, error) {
 	var cnt int64
 	buf := make([]byte, 32*1024)
 	for {
@@ -29,7 +28,7 @@ func WriteToWebsocket(dst *websocket.Conn, src net.Conn) (int64, error) {
 	}
 }
 
-func WriteToConn(dst net.Conn, src *websocket.Conn) (int64, error) {
+func WriteToConn(dst io.Writer, src *websocket.Conn) (int64, error) {
 	var cnt int64
 	for {
 		_, rd, err := src.NextReader()

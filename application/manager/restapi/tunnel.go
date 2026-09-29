@@ -1,12 +1,18 @@
 package restapi
 
 import (
+	"crypto/rand"
+	"io"
 	"log/slog"
+	"mime"
+	"net/http"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/xmx/modif/application/echox"
 	"github.com/xmx/modif/application/manager/request"
+	"github.com/xmx/modif/application/manager/response"
 	"github.com/xmx/modif/application/manager/service"
 )
 
@@ -26,6 +32,8 @@ func NewTunnel(wsu *websocket.Upgrader, svc *service.Tunnel, log *slog.Logger) *
 
 func (tun *Tunnel) RegisterHTTP(g echox.EchoRoute) error {
 	g.API.Group.GET("/tunnel", tun.connect)
+	g.API.Group.GET("/tunnels", tun.list)
+	g.API.Group.GET("/tunnel/speedtest", tun.speedtest)
 
 	return nil
 }
@@ -51,4 +59,26 @@ func (tun *Tunnel) connect(c *echo.Context) error {
 	_ = tun.svc.Connect(ws, req.Address)
 
 	return nil
+}
+
+func (tun *Tunnel) list(c *echo.Context) error {
+	infos := tun.svc.List()
+	infos.Sort()
+
+	stats := infos.Stats()
+	ret := response.NewData(stats)
+
+	return c.JSON(http.StatusOK, ret)
+}
+
+func (tun *Tunnel) speedtest(c *echo.Context) error {
+	const size = 1024 * 1024 * 1024
+	r := io.LimitReader(rand.Reader, size)
+	disp := map[string]string{"filename": "data.dat"}
+	mediaType := mime.FormatMediaType("attachment", disp)
+	w := c.Response()
+	w.Header().Set(echo.HeaderContentDisposition, mediaType)
+	w.Header().Set(echo.HeaderContentLength, strconv.Itoa(size))
+
+	return c.Stream(http.StatusOK, echo.MIMEOctetStream, r)
 }
