@@ -42,7 +42,7 @@ jobs:
 
       - name: Set artifact name
         id: artifact
-        run: echo "name=modif-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        run: echo "name=modif-$(date -u '+%Y%m%d%H%M%S')" >> "$GITHUB_OUTPUT"
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v7
