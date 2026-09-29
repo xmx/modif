@@ -12,6 +12,7 @@ import (
 
 	"github.com/NVIDIA/gontainer/v2"
 	"github.com/labstack/echo/v5"
+	"github.com/lmittmann/tint"
 	"github.com/xmx/modif/application/aigate/aiflow"
 	gatemid "github.com/xmx/modif/application/aigate/middle"
 	"github.com/xmx/modif/application/aigate/process"
@@ -37,7 +38,11 @@ func Run(ctx context.Context, cfg string) error {
 
 //goland:noinspection GoUnhandledErrorResult
 func Exec(ctx context.Context, cfg config.Config) error {
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
+	log := slog.New(tint.NewTextHandler(os.Stdout, &tint.Options{
+		AddSource:  true,
+		Level:      slog.LevelDebug,
+		TimeFormat: time.RFC3339,
+	}))
 	e := echo.New()
 	e.HTTPErrorHandler = echox.HandleError
 	mcpsrv := component.NewMCPServer(log)
@@ -94,12 +99,14 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewFactory(gateapi.NewResponse),
 
 		gontainer.NewFactory(service.NewDocument),
+		gontainer.NewFactory(service.NewTunnel),
 
 		// Manager API
 		gontainer.NewFactory(manaapi.NewDocument),
 		gontainer.NewFactory(manaapi.NewInspect),
 		gontainer.NewFactory(manaapi.NewMCP),
 		gontainer.NewFactory(manaapi.NewRoute),
+		gontainer.NewFactory(manaapi.NewTunnel),
 		gontainer.NewService(manaapi.NewWebDAV("/")),
 
 		gontainer.NewEntrypoint(mcps.Registers), // 注册 MCP 路由
