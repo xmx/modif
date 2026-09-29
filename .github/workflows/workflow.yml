@@ -50,5 +50,6 @@ jobs:
           name: ${{ steps.artifact.outputs.name }}
           path: |
             modif-*
+            resources/config
             resources/static
             VERSION

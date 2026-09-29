@@ -1,3 +1,6 @@
+// 这是配置示例文件，修改它不会生效。
+// 使用方法：复制一份并重命名为 application.jsonc，再按实际环境填写参数。
+//   cp resources/config/application-example.jsonc resources/config/application.jsonc
 {
   "server": {
     "addr": "0.0.0.0:8866"
