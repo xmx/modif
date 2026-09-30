@@ -2,29 +2,47 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { IngestUpload } from "@/components/IngestUpload";
 import { DocumentList } from "@/components/DocumentList";
 import { UIList } from "@/components/UIList";
+import { GitHubIcon } from "@/components/GitHubIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { apiFetch, problemMessage } from "@/lib/problem";
 import { useToast } from "@/components/ui/toast";
 import { usePathname, navigate } from "@/lib/router";
-import { CableIcon, FileUpIcon, PaletteIcon, RefreshCwIcon, WaypointsIcon } from "lucide-react";
+import {
+  BoxesIcon,
+  CableIcon,
+  CalendarClockIcon,
+  CpuIcon,
+  FileUpIcon,
+  FolderIcon,
+  GitCommitHorizontalIcon,
+  HammerIcon,
+  MonitorIcon,
+  PaletteIcon,
+  RefreshCwIcon,
+  TerminalIcon,
+  UserIcon,
+  WaypointsIcon,
+} from "lucide-react";
 
 /* ── 管理菜单定义 ────────────────────────────────────────────── */
 
-type AdminSection = "ingest" | "appearance" | "routes" | "tunnels";
+type AdminSection = "ingest" | "appearance" | "routes" | "tunnels" | "system";
 
 const MENU: Array<{ key: AdminSection; path: string; label: string; icon: typeof FileUpIcon }> = [
   { key: "ingest", path: "/admin/ingest", label: "文档导入", icon: FileUpIcon },
   { key: "appearance", path: "/admin/appearance", label: "界面切换", icon: PaletteIcon },
   { key: "routes", path: "/admin/routes", label: "接口路由", icon: WaypointsIcon },
   { key: "tunnels", path: "/admin/tunnels", label: "隧道代理", icon: CableIcon },
+  { key: "system", path: "/admin/system", label: "系统信息", icon: CpuIcon },
 ];
 
 function sectionFrom(pathname: string): AdminSection {
   if (pathname.startsWith("/admin/appearance")) return "appearance";
   if (pathname.startsWith("/admin/routes")) return "routes";
   if (pathname.startsWith("/admin/tunnels")) return "tunnels";
+  if (pathname.startsWith("/admin/system")) return "system";
   return "ingest";
 }
 
@@ -290,6 +308,269 @@ function TunnelsSection() {
   );
 }
 
+/* ── 系统信息 ──────────────────────────────────────────────── */
+
+/** 对应 Go 的 debug.BuildInfo / Module / BuildSetting（无 json tag，字段名首字母大写）。 */
+interface BuildModule {
+  Path: string;
+  Version: string;
+}
+
+interface GoBuildInfo {
+  GoVersion?: string;
+  Path?: string;
+  Main?: BuildModule;
+  Deps?: BuildModule[];
+  Settings?: Array<{ Key: string; Value: string }>;
+}
+
+/** 对应后端 bininfo.Info。 */
+interface SystemInfo {
+  goos?: string;
+  goarch?: string;
+  version?: string;
+  revision?: string;
+  username?: string;
+  workdir?: string;
+  module?: string;
+  committed_at?: string;
+  build_info?: GoBuildInfo;
+}
+
+/** 概览区的小标签：等宽字体 + 淡色底，与正文信息区分。 */
+function MetaChip({ icon: Icon, title, children }: {
+  icon: typeof CpuIcon;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      title={title}
+      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 text-[0.7rem] text-muted-foreground"
+    >
+      <Icon className="size-3 shrink-0 opacity-70" />
+      <span className="truncate font-mono">{children}</span>
+    </span>
+  );
+}
+
+/** 概览字段：标签在上、值在下；长值截断，hover 可见完整内容。 */
+function InfoField({ icon: Icon, label, value }: {
+  icon: typeof CpuIcon;
+  label: string;
+  value?: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="flex items-center gap-1 text-[0.65rem] text-muted-foreground">
+        <Icon className="size-3 shrink-0 opacity-70" />
+        {label}
+      </span>
+      <code className={cn("truncate font-mono text-xs", !value && "text-muted-foreground")} title={value}>
+        {value || "-"}
+      </code>
+    </div>
+  );
+}
+
+/** 键值列表，用于构建参数 / 依赖模块。keyWidth 可按内容调整左列宽度，href 可让键名变成外链。 */
+function KeyValueRows({ rows, keyWidth = "w-44" }: {
+  rows: Array<{ key: string; value?: string; href?: string }>;
+  keyWidth?: string;
+}) {
+  return (
+    <div className="divide-y divide-border/60">
+      {rows.map((row, i) => (
+        <div
+          key={`${row.key}-${i}`}
+          className="flex items-start gap-3 px-3 py-1.5 transition-colors hover:bg-muted/40"
+        >
+          {row.href ? (
+            <a
+              href={row.href}
+              target="_blank"
+              rel="noreferrer"
+              title={`在 pkg.go.dev 查看 ${row.key}`}
+              className={cn(
+                "shrink-0 break-all font-mono text-xs text-primary hover:underline",
+                keyWidth
+              )}
+            >
+              {row.key}
+            </a>
+          ) : (
+            <span className={cn("shrink-0 break-all font-mono text-xs text-muted-foreground", keyWidth)}>
+              {row.key}
+            </span>
+          )}
+          <span className={cn("min-w-0 break-all font-mono text-xs", !row.value && "text-muted-foreground")}>
+            {row.value || "-"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 卡片外框：统一的圆角、描边与卡片底色。 */
+function InfoCard({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("overflow-hidden rounded-xl border bg-card", className)}>{children}</div>
+  );
+}
+
+/** 卡片标题栏：图标 + 标题 + 紧随其后的计数。 */
+function InfoCardHeader({ icon: Icon, title, count }: {
+  icon: typeof CpuIcon;
+  title: string;
+  count?: number;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="text-xs font-semibold text-foreground">{title}</span>
+      {typeof count === "number" && <Badge variant="secondary">{count}</Badge>}
+    </div>
+  );
+}
+
+function SystemSection() {
+  const [info, setInfo] = useState<SystemInfo | null>(null);
+  const { toast } = useToast();
+
+  const load = useCallback(
+    async (notify: boolean) => {
+      try {
+        const resp = await apiFetch("/api/system/buildinfo");
+        setInfo((await resp.json()) as SystemInfo);
+      } catch (e) {
+        if (notify) toast({ ...problemMessage(e), variant: "error" });
+      }
+    },
+    [toast]
+  );
+
+  useEffect(() => {
+    void load(true);
+  }, [load]);
+
+  const build = info?.build_info;
+  const settings = build?.Settings ?? [];
+  const deps = build?.Deps ?? [];
+  const platform =
+    info?.goos || info?.goarch ? `${info.goos ?? "?"}/${info.goarch ?? "?"}` : "";
+  const repoURL =
+    info?.module && info?.revision
+      ? `https://${info.module}/tree/${info.revision}`
+      : "";
+  // 后端返回的 version 形如 "2026.9.30+d2209c0"（不带 v 前缀），展示时统一补上
+  const versionLabel = info?.version
+    ? info.version.startsWith("v")
+      ? info.version
+      : `v${info.version}`
+    : "";
+
+  return (
+    <section className="flex flex-col gap-4">
+      {info === null ? (
+        <div className="flex flex-col gap-4">
+          <div className="h-32 animate-pulse rounded-xl border bg-muted/30" />
+          <div className="h-20 animate-pulse rounded-xl border bg-muted/30" />
+        </div>
+      ) : (
+        <>
+          {/* 概览：版本为主视觉，右侧为运行环境标签，下方为详细字段 */}
+          <InfoCard className="p-4">
+            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <CpuIcon className="size-5" />
+              </span>
+              <div className="min-w-40 flex-1">
+                <span className="block font-mono text-lg leading-tight font-semibold tracking-tight">
+                  {versionLabel || "未知版本"}
+                </span>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                  <GitHubIcon className="size-3 shrink-0 text-muted-foreground" />
+                  {repoURL ? (
+                    <a
+                      href={repoURL}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={repoURL}
+                      className="min-w-0 truncate font-mono text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
+                    >
+                      {info.module || "-"}
+                    </a>
+                  ) : (
+                    <span
+                      className="min-w-0 truncate font-mono text-xs text-muted-foreground"
+                      title={info.module}
+                    >
+                      {info.module || "-"}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {platform && (
+                  <MetaChip icon={MonitorIcon} title="运行平台">
+                    {platform}
+                  </MetaChip>
+                )}
+                {build?.GoVersion && (
+                  <MetaChip icon={TerminalIcon} title="编译使用的 Go 版本">
+                    {build.GoVersion}
+                  </MetaChip>
+                )}
+                {info.revision && (
+                  <MetaChip icon={GitCommitHorizontalIcon} title={info.revision}>
+                    {info.revision.slice(0, 7)}
+                  </MetaChip>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
+              <InfoField
+                icon={CalendarClockIcon}
+                label="提交时间"
+                value={info.committed_at ? formatTime(info.committed_at) : ""}
+              />
+              <InfoField icon={GitCommitHorizontalIcon} label="修订版本" value={info.revision} />
+              <InfoField icon={UserIcon} label="运行用户" value={info.username} />
+              <InfoField icon={FolderIcon} label="工作目录" value={info.workdir} />
+            </div>
+          </InfoCard>
+
+          {deps.length > 0 && (
+            <InfoCard>
+              <InfoCardHeader icon={BoxesIcon} title="依赖模块" count={deps.length} />
+              <KeyValueRows
+                rows={deps.map((d) => ({
+                  key: d.Path,
+                  value: d.Version,
+                  // 带上版本号可直达该版本的文档；缺版本号时退化为模块首页
+                  href: d.Version
+                    ? `https://pkg.go.dev/${d.Path}@${d.Version}`
+                    : `https://pkg.go.dev/${d.Path}`,
+                }))}
+                keyWidth="w-full max-w-[min(100%,32rem)] sm:w-[32rem]"
+              />
+            </InfoCard>
+          )}
+
+          {settings.length > 0 && (
+            <InfoCard>
+              <InfoCardHeader icon={HammerIcon} title="构建参数" count={settings.length} />
+              <KeyValueRows rows={settings.map((s) => ({ key: s.Key, value: s.Value }))} />
+            </InfoCard>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /* ── 管理后台页（左侧菜单 + 右侧内容） ───────────────────────── */
 
 export function AdminPage() {
@@ -325,11 +606,12 @@ export function AdminPage() {
 
       {/* 右侧内容 */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col px-6 py-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col px-6 py-6">
           {section === "ingest" && <IngestSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "routes" && <RoutesSection />}
           {section === "tunnels" && <TunnelsSection />}
+          {section === "system" && <SystemSection />}
         </div>
       </div>
     </div>

@@ -38,6 +38,15 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /*
+   * 全站英文字体：系统默认等宽字体（不引入任何网络字体）。
+   * 等宽字体不含中文字形，浏览器会按字符回退，因此中文自动落到后面的系统中文字体上，观感保持不变。
+   */
+  --font-app:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono",
+    "Liberation Mono", "Courier New", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace, system-ui, sans-serif;
 }
 
 .dark {
@@ -76,6 +85,9 @@
 }
 
 @theme inline {
+  /* 字体：sans 与 mono 统一走 --font-app（英文等宽、中文回退系统中文字体） */
+  --font-sans: var(--font-app);
+  --font-mono: var(--font-app);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -117,6 +129,10 @@
 @layer base {
   * {
     @apply border-border;
+  }
+  html {
+    /* 全站英文/数字使用系统等宽字体，中文由 --font-app 内的中文字体回退渲染 */
+    font-family: var(--font-app);
   }
   body {
     @apply bg-background text-foreground;

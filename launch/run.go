@@ -112,6 +112,7 @@ func Exec(ctx context.Context, cfg config.Config) error {
 		gontainer.NewFactory(manaapi.NewInspect),
 		gontainer.NewFactory(manaapi.NewMCP),
 		gontainer.NewFactory(manaapi.NewRoute),
+		gontainer.NewFactory(manaapi.NewSystem),
 		gontainer.NewFactory(manaapi.NewTunnel),
 		gontainer.NewService(manaapi.NewWebDAV("/")),
 
