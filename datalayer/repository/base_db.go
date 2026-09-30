@@ -13,6 +13,7 @@ type BaseDB struct {
 	log *slog.Logger
 
 	document Document
+	tunnel   Tunnel
 }
 
 func NewBaseDB(db *mongo.Database, log *slog.Logger) *BaseDB {
@@ -21,12 +22,14 @@ func NewBaseDB(db *mongo.Database, log *slog.Logger) *BaseDB {
 		log: log,
 
 		document: NewDocument(db),
+		tunnel:   NewTunnel(db),
 	}
 }
 
 func (b *BaseDB) Database() *mongo.Database { return b.db }
 
 func (b *BaseDB) Document() Document { return b.document }
+func (b *BaseDB) Tunnel() Tunnel     { return b.tunnel }
 
 func (b *BaseDB) CreateIndex(ctx context.Context) error {
 	rv := reflect.ValueOf(b)

@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"sync"
@@ -8,21 +11,40 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/xmx/modif/application/manager/request"
 	"github.com/xmx/modif/application/manager/response"
 	"github.com/xmx/modif/application/manager/wsocket"
+	"github.com/xmx/modif/datalayer/model"
+	"github.com/xmx/modif/datalayer/repository"
 )
 
 type Tunnel struct {
+	db  *repository.BaseDB
 	log *slog.Logger
 	gid atomic.Int64
 	mtx sync.RWMutex
 	hub map[*response.TunnelInfo]struct{}
 }
 
-func NewTunnel(log *slog.Logger) *Tunnel {
+func NewTunnel(db *repository.BaseDB, log *slog.Logger) *Tunnel {
 	return &Tunnel{
+		db:  db,
 		log: log,
 	}
+}
+
+func (tun *Tunnel) Create(ctx context.Context, req request.TunnelCreate) error {
+	now := time.Now()
+	dat := &model.Tunnel{
+		Name:      req.Name,
+		SecretKey: tun.randomSecretKey(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	coll := tun.db.Tunnel()
+	_, err := coll.InsertOne(ctx, dat)
+
+	return err
 }
 
 func (tun *Tunnel) Connect(cli *websocket.Conn, addr string) error {
@@ -115,4 +137,11 @@ func (tun *Tunnel) delHub(info *response.TunnelInfo) {
 	defer tun.mtx.Unlock()
 
 	delete(tun.hub, info)
+}
+
+func (*Tunnel) randomSecretKey() string {
+	buf := make([]byte, 100)
+	_, _ = rand.Read(buf)
+
+	return "md_tunnel_" + hex.EncodeToString(buf)
 }
