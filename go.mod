@@ -9,7 +9,7 @@ require (
 	github.com/labstack/echo/v5 v5.4.0
 	github.com/lmittmann/tint v1.2.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/openai/openai-go/v3 v3.66.0
+	github.com/openai/openai-go/v3 v3.68.0
 	github.com/qdrant/go-client v1.19.3
 	github.com/sourcegraph/jsonrpc2 v0.2.3
 	go.mongodb.org/mongo-driver/v2 v2.9.1
