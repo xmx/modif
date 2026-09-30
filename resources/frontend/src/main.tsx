@@ -4,6 +4,7 @@ import './index.css'
 import 'highlight.js/styles/atom-one-dark.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/ui/toast'
+import { UpdatePrompt } from './components/UpdatePrompt'
 
 // 启动即应用保存的主题，保证登录页这类不经过 AppLayout（含 ThemeToggle）的页面也能自适应 dark/light。
 type Theme = "light" | "dark" | "system";
@@ -21,6 +22,7 @@ if (initialTheme === "system") {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ToastProvider>
+      <UpdatePrompt />
       <App />
     </ToastProvider>
   </StrictMode>,

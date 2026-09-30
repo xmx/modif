@@ -17,6 +17,8 @@ export default defineConfig({
     // 仅面向最新版 Chrome，不做旧浏览器降级，产物更小更快
     target: 'chrome120',
     cssMinify: true,
+    // 主包较大属预期（仅提示体积，不影响构建），调高阈值避免噪音
+    chunkSizeWarningLimit: 1024,
   },
   server: {
     host: '0.0.0.0',
