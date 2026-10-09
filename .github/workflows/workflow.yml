@@ -19,6 +19,8 @@ jobs:
         target:
           - os: linux
             arch: amd64
+          - os: android
+            arch: arm64
           - os: windows
             arch: amd64
 
