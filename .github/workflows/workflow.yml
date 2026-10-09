@@ -13,6 +13,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - os: linux
+            arch: amd64
+          - os: windows
+            arch: amd64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,7 +38,10 @@ jobs:
           cache: npm
           cache-dependency-path: resources/frontend/package-lock.json
 
-      - name: Build Backend
+      - name: Build Backend ${{ matrix.target.os }}-${{ matrix.target.arch }}
+        env:
+          GOOS: ${{ matrix.target.os }}
+          GOARCH: ${{ matrix.target.arch }}
         run: |
           chmod +x ./build.sh
           ./build.sh
