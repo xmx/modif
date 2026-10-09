@@ -17,7 +17,7 @@
     "model": "xxx-text-embedding"
   },
   "mongodb": {
-    "uri": "mongodb://admin:password@mongodb.example.com:27017/siem?authSource=admin"
+    "uri": "mongodb://admin:password@mongodb.example.com:27017/modif?authSource=admin"
   },
   "qdrant": {
     "host": "qdrant.example.com",

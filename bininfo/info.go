@@ -68,6 +68,9 @@ func buildInfo() Info {
 		}
 		if info.Version == "" {
 			sv := binfo.Main.Version
+			if sv == "(devel)" {
+				sv = "0.0.1"
+			}
 			info.Version = strings.TrimPrefix(sv, "v")
 		}
 	}
